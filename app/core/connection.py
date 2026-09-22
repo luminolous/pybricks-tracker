@@ -265,8 +265,10 @@ class HubConnection:
         self._hub = None
         self.hub_name = None
         self._splitter.reset()
-        self._set_program_running(False)
+        # Link state first: listeners must see "disconnected while running",
+        # not a program that ended normally.
         self._set_link_state(LinkState.DISCONNECTED)
+        self._set_program_running(False)
 
     def _handle_stdout(self, chunk: bytes) -> None:
         for line in self._splitter.feed(bytes(chunk)):

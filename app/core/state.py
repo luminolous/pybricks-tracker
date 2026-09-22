@@ -1,6 +1,7 @@
 """RobotState, SessionState, Pose, EventRecord.
 
-M1 holds only the port scan result. Pose and telemetry arrive with M2/M4.
+Holds the port scan result and the telemetry watch. Pose history arrives
+with M4.
 """
 
 from __future__ import annotations
@@ -40,3 +41,35 @@ class PortScan:
     def missing_ports(self) -> list[str]:
         """Ports the finished scan never reported. Non-empty means a lost line."""
         return [p for p in PORT_LETTERS if p not in self.device_ids]
+
+
+TELEMETRY_TIMEOUT_S = 2.0  # protocol.md: 2 s without T means the link is lost
+
+
+class TelemetryWatch:
+    """Tracks silence on the T stream of a running mode program.
+
+    Armed by the mode's R handshake (scan_ports never sends T), disarmed when
+    the program ends. Times are monotonic seconds supplied by the caller.
+    """
+
+    def __init__(self, timeout_s: float = TELEMETRY_TIMEOUT_S) -> None:
+        self.timeout_s = timeout_s
+        self.armed = False
+        self._last_s = 0.0
+
+    def arm(self, now_s: float) -> None:
+        self.armed = True
+        self._last_s = now_s
+
+    def disarm(self) -> None:
+        self.armed = False
+
+    def saw_telemetry(self, now_s: float) -> None:
+        self._last_s = now_s
+
+    def silence_s(self, now_s: float) -> float:
+        return now_s - self._last_s if self.armed else 0.0
+
+    def lost(self, now_s: float) -> bool:
+        return self.armed and self.silence_s(now_s) >= self.timeout_s

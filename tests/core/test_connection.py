@@ -170,3 +170,16 @@ async def test_dropped_link_resets_state(caplog: pytest.LogCaptureFixture) -> No
     # reconnect works after a drop
     await h.conn.connect(HUB)
     assert h.conn.connected
+
+
+async def test_drop_reports_link_before_program_end() -> None:
+    # The UI tells "link lost while running" from "program ended" by this order.
+    h = Harness()
+    order: list[str] = []
+    h.conn._on_link_state = lambda s: order.append(s.value)
+    h.conn._on_program_running = lambda r: order.append(f"running={r}")
+    await h.conn.connect(HUB)
+    await h.conn.run_file(Path("x.py"))
+    order.clear()
+    h.hub.drop_link()
+    assert order == ["disconnected", "running=False"]
