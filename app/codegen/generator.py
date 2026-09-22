@@ -27,7 +27,8 @@ D_EVERY_LOOPS = 25  # D at 4 Hz
 S_EVERY_LOOPS = 100  # S at 1 Hz
 DISTANCE_EVERY_LOOPS = 10  # ultrasonic at 10 Hz (hub-programs.md)
 
-MODES = ("line_follower", "drift_test")
+MODES = ("line_follower", "drift_test", "calibrate")
+NEEDS_LINE_SENSOR = ("line_follower", "calibrate")
 
 
 class GeneratorError(ValueError):
@@ -76,8 +77,8 @@ def render(config: RobotConfig, mode: str, drift: str | None = None) -> str:
     if left is None or right is None:
         raise GeneratorError("Assign a left and a right wheel before running.")
     line = _device(config.port_for(Role.LINE_SENSOR))
-    if mode == "line_follower" and line is None:
-        raise GeneratorError("The line follower needs a line sensor.")
+    if mode in NEEDS_LINE_SENSOR and line is None:
+        raise GeneratorError(f"The {mode.replace('_', ' ')} program needs a line sensor.")
     for port, assignment in config.ports.items():
         if assignment.role in MOTOR_ROLES - {Role.WHEEL_LEFT, Role.WHEEL_RIGHT}:
             raise GeneratorError(f"Port {port}: aux motors are not supported yet.")

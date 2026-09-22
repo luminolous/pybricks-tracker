@@ -139,6 +139,12 @@ QComboBox QAbstractItemView {{
 QDoubleSpinBox {{ font-family: "{fonts.mono}"; }}
 QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{ width: 0; border: 0; }}
 
+QSlider::groove:horizontal {{ height: 2px; background: {LINE_STRONG}; }}
+QSlider::sub-page:horizontal {{ background: {ACCENT}; }}
+QSlider::sub-page:horizontal:disabled {{ background: {LINE_STRONG}; }}
+QSlider::handle:horizontal {{ width: 4px; height: 12px; margin: -5px 0; background: {TEXT}; }}
+QSlider::handle:horizontal:disabled {{ background: {DIM}; }}
+
 QCheckBox {{ color: {MUTED}; spacing: 6px; }}
 QCheckBox::indicator {{ width: 10px; height: 10px; border: 1px solid {MUTED}; border-radius: 1px; }}
 QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}

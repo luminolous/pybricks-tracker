@@ -128,7 +128,21 @@ class Status:
     imu_ready: bool
 
 
-EVENT_KINDS = frozenset({"LOST", "FOUND", "GIVEUP", "OBS", "STALL", "BUMP", "LAP", "WDOG"})
+EVENT_KINDS = frozenset({"LOST", "FOUND", "GIVEUP", "OBS", "STALL", "BUMP", "LAP", "WDOG", "ACK"})
+TUNING_KEYS = ("KP", "KD", "SPD", "THR")
+
+
+def parse_ack(detail: str | None) -> tuple[str, float] | None:
+    """`KP:-1.8` -> ("KP", -1.8). None for anything else."""
+    if not detail:
+        return None
+    key, sep, value = detail.partition(":")
+    if not sep or key not in TUNING_KEYS:
+        return None
+    try:
+        return key, float(value)
+    except ValueError:
+        return None
 
 
 @dataclass(frozen=True)

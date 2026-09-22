@@ -139,6 +139,23 @@ class SensorCalibration:
         return (self.black + self.white) // 2
 
 
+CALIBRATION_MIN_GAP = 30  # ui-spec: a smaller gap usually means the sensor sits too high
+
+
+def check_calibration(black: int, white: int) -> tuple[SensorCalibration, str | None]:
+    """Validate a black/white pair. Returns the calibration and a warning, if any."""
+    if not 0 <= black < white <= 100:
+        raise ValueError(f"White ({white}) must read higher than black ({black}), both 0-100.")
+    gap = white - black
+    warning = None
+    if gap < CALIBRATION_MIN_GAP:
+        warning = (
+            f"Gap is only {gap} (want {CALIBRATION_MIN_GAP}+). "
+            "The sensor is probably mounted too high above the floor."
+        )
+    return SensorCalibration(black=black, white=white), warning
+
+
 @dataclass(frozen=True)
 class RobotConfig:
     ports: dict[str, PortAssignment] = field(default_factory=lambda: dict(DEFAULT_ASSIGNMENTS))

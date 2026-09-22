@@ -176,12 +176,16 @@ def check_commands():
         try:
             if key == "KP":
                 KP = float(value)
+                emit_e("ACK", "KP:{}".format(KP))
             elif key == "KD":
                 KD = float(value)
+                emit_e("ACK", "KD:{}".format(KD))
             elif key == "SPD":
                 BASE_SPEED = float(value)
+                emit_e("ACK", "SPD:{}".format(BASE_SPEED))
             elif key == "THR":
                 OBSTACLE_MM = int(value)
+                emit_e("ACK", "THR:{}".format(OBSTACLE_MM))
             elif key == "MODE":
                 if value == "STOP":
                     STOPPED = True
@@ -192,7 +196,7 @@ def check_commands():
             elif key == "ORG":
                 reset_origin()
         except ValueError:
-            pass  # malformed value: ignore the command, keep driving safely
+            pass  # malformed value: no ACK, keep the old value, keep driving safely
 
 
 def watchdog_ok():

@@ -33,7 +33,13 @@ from PySide6.QtWidgets import (
 )
 
 from app.codegen.generator import LOOP_MS, SCAN_PORTS_PROGRAM, GeneratorError, generate
-from app.core.config import CONFIGS_DIR, ConfigError, RobotConfig, RobotGeometry
+from app.core.config import (
+    CONFIGS_DIR,
+    ConfigError,
+    RobotConfig,
+    RobotGeometry,
+    SensorCalibration,
+)
 from app.core.connection import HubConnection, HubConnectionError, LinkState, run_heartbeat
 from app.core.protocol import (
     Detail,
@@ -43,10 +49,13 @@ from app.core.protocol import (
     Telemetry,
     decode_line,
     encode_command,
+    parse_ack,
 )
 from app.core.state import PortScan, RobotState, TelemetryWatch
+from app.core.tuning import TuningSender
 from app.ui.code_preview import CodePreview
 from app.ui.console_pane import ConsolePane
+from app.ui.dialogs.calibration import CalibrationDialog
 from app.ui.dialogs.connect import ConnectDialog
 from app.ui.dialogs.drift_test import DriftTestDialog
 from app.ui.link_banner import LinkBanner
@@ -54,6 +63,7 @@ from app.ui.map_view import MapView
 from app.ui.plot_panel import DT_WARN, PlotPanel
 from app.ui.port_panel import PortPanel
 from app.ui.theme import caption, label, set_prop
+from app.ui.tuning_panel import TuningPanel
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +164,9 @@ class MainWindow(QMainWindow):
         self.state = RobotState()
         self._current_mode: str | None = None
         self._drift_dialog: DriftTestDialog | None = None
+        self._calibration_dialog: CalibrationDialog | None = None
+        self._tuning_live = False
+        self._tuning_task: asyncio.Task | None = None
         self._dropped_at: float | None = None  # BLE lost while a program ran
         self._banner_dismissed = False
         self.setWindowTitle(APP_NAME)
@@ -161,6 +174,7 @@ class MainWindow(QMainWindow):
         self.conn = connection_factory(
             on_link_state=self._on_link_state, on_program_running=self._on_program_running
         )
+        self.tuner = TuningSender(self.conn.write_line, clock=clock)
         self.scan = PortScan()
         self._scan_done = asyncio.Event()
         self._tasks: set[asyncio.Task] = set()
@@ -202,6 +216,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+U"), self, activated=self.show_code_preview)
         QShortcut(QKeySequence("Ctrl+P"), self, activated=self._scan_clicked)
         QShortcut(QKeySequence("Ctrl+D"), self, activated=self.show_drift_test)
+        QShortcut(QKeySequence("Ctrl+K"), self, activated=self.show_calibration)
         QShortcut(QKeySequence("Esc"), self, activated=self._stop_clicked)
         app = QApplication.instance()
         if app is not None:
@@ -324,10 +339,9 @@ class MainWindow(QMainWindow):
         self.scan_button = _action_button("Scan ports", "Ctrl+P")
         self.scan_button.clicked.connect(self._scan_clicked)
         box.addWidget(self.scan_button)
-        calibrate = _action_button("Calibrate sensor", "Ctrl+K")
-        calibrate.setEnabled(False)
-        calibrate.setToolTip("Arrives in M6")
-        box.addWidget(calibrate)
+        self.calibrate_button = _action_button("Calibrate sensor", "Ctrl+K")
+        self.calibrate_button.clicked.connect(self.show_calibration)
+        box.addWidget(self.calibrate_button)
         self.drift_button = _action_button("Drift test", "Ctrl+D")
         self.drift_button.clicked.connect(self.show_drift_test)
         box.addWidget(self.drift_button)
@@ -418,25 +432,9 @@ class MainWindow(QMainWindow):
         plots_layout.addWidget(self.plots)
         layout.addWidget(plots)
 
-        tuning = _frame("section")
-        t_layout = QGridLayout(tuning)
-        t_layout.setContentsMargins(16, 14, 16, 14)
-        t_layout.setVerticalSpacing(8)
-        t_layout.addWidget(caption("Tuning"), 0, 0, 1, 2)
-        self.tuning_hint = label("sent with Run; live in M6", tone="dim")
-        t_layout.addWidget(self.tuning_hint, 0, 2, Qt.AlignmentFlag.AlignRight)
-        self.tuning_fields: dict[str, QDoubleSpinBox] = {
-            "kp": _spin(-50, 50, 2),
-            "kd": _spin(-50, 50, 2),
-            "base_speed_mm_s": _spin(0, 500, 0, " mm/s"),
-        }
-        for i, (key, name) in enumerate(
-            (("kp", "KP"), ("kd", "KD"), ("base_speed_mm_s", "SPD")), start=1
-        ):
-            t_layout.addWidget(label(name, tone="muted", mono=True), i, 0)
-            t_layout.addWidget(self.tuning_fields[key], i, 2)
-        t_layout.setColumnStretch(1, 1)
-        layout.addWidget(tuning)
+        self.tuning = TuningPanel()
+        self.tuning.changed.connect(self._tuning_changed)
+        layout.addWidget(self.tuning)
 
         events = _frame("section")
         e_layout = QVBoxLayout(events)
@@ -454,7 +452,7 @@ class MainWindow(QMainWindow):
     def current_config(self) -> RobotConfig:
         """The config the UI shows. Fields without a widget come from the loaded preset."""
         g = {key: spin.value() for key, spin in self.geometry_fields.items()}
-        t = {key: spin.value() for key, spin in self.tuning_fields.items()}
+        t = self.tuning.values()
         return RobotConfig(
             ports=self.port_panel.assignments(),
             geometry=RobotGeometry(**g),
@@ -467,8 +465,7 @@ class MainWindow(QMainWindow):
         self.port_panel.set_assignments(config.ports)
         for key, spin in self.geometry_fields.items():
             spin.setValue(getattr(config.geometry, key))
-        for key, spin in self.tuning_fields.items():
-            spin.setValue(getattr(config.tuning, key))
+        self.tuning.set_values(config.tuning)
 
     def save_preset(self, path: Path) -> None:
         self.current_config().save(path)
@@ -492,12 +489,13 @@ class MainWindow(QMainWindow):
         """Start background tasks. Call once the qasync loop is running."""
         self._drain_task = asyncio.ensure_future(self._drain_lines())
         self._heartbeat_task = asyncio.ensure_future(run_heartbeat(self.conn))
+        self._tuning_task = asyncio.ensure_future(self.tuner.run(lambda: self._tuning_live))
         self._readout_timer.start()
 
     async def shutdown(self) -> None:
         """Stop the hub program if one runs, then disconnect. Never raises."""
         self._readout_timer.stop()
-        for task in (self._drain_task, self._heartbeat_task, *self._tasks):
+        for task in (self._drain_task, self._heartbeat_task, self._tuning_task, *self._tasks):
             if task:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -557,6 +555,7 @@ class MainWindow(QMainWindow):
             self.note(str(exc))
             return False
         self._current_mode = mode
+        self._set_tuning_mode("waiting")
         self._ready = None
         self._ready_event.clear()
         self.note(f"uploading {path}")
@@ -609,6 +608,52 @@ class MainWindow(QMainWindow):
             self._preview.show_program(path.read_text(encoding="utf-8"), path)
         self._preview.show()
         self._preview.raise_()
+
+    # -- tuning and calibration ------------------------------------------
+
+    def _set_tuning_mode(self, mode: str) -> None:
+        self._tuning_live = mode == "live"
+        self.tuning.set_mode(mode)
+
+    def _start_live_tuning(self, ready: Ready) -> None:
+        if not ready.compatible:
+            return  # run_program stops it; never send tuning to a mismatched program
+        if ready.mode != "LINE_FOLLOWER":
+            self._set_tuning_mode("off")  # drift test and calibration ignore KP/KD/SPD
+            return
+        # The hub starts with the values rendered into it: already acknowledged.
+        self.tuner.reset()
+        for key, row in self.tuning.rows.items():
+            self.tuner.seed(key, row.value())
+        self._set_tuning_mode("live")
+
+    def _tuning_changed(self, key: str, value: float) -> None:
+        if self._tuning_live:
+            self.tuner.want(key, value)
+
+    def show_calibration(self) -> None:
+        if self._calibration_dialog is None:
+            self._calibration_dialog = CalibrationDialog(
+                start=lambda: self.run_program("calibrate"),
+                stop=self._stop_calibration,
+                samples=lambda window_ms: self.state.fast.recent(0, window_ms),
+                current=lambda: self._base_config.calibration,
+                apply=self.apply_calibration,
+                parent=self,
+            )
+        self._calibration_dialog.show()
+        self._calibration_dialog.raise_()
+
+    async def _stop_calibration(self) -> None:
+        if self._current_mode == "calibrate" and self.conn.program_running:
+            await self.stop_program("calibration closed")
+
+    def apply_calibration(self, calibration: SensorCalibration) -> None:
+        self._base_config = replace(self._base_config, calibration=calibration)
+        self.note(
+            f"calibration set: black {calibration.black}, white {calibration.white}, "
+            f"edge {calibration.edge}"
+        )
 
     def show_drift_test(self) -> None:
         if self._drift_dialog is None:
@@ -678,8 +723,12 @@ class MainWindow(QMainWindow):
                 self.state.reset()
                 self.map.clear()
                 self.follow_button.setChecked(True)
+                self._start_live_tuning(record)
         elif isinstance(record, Event):
-            if record.kind == "WDOG":
+            ack = parse_ack(record.detail) if record.kind == "ACK" else None
+            if ack is not None:
+                self.tuner.ack(*ack)
+            elif record.kind == "WDOG":
                 self.note(f"Hub watchdog stopped the robot: no command for {record.detail} ms.")
             elif record.kind == "GIVEUP":
                 self.note("Line search failed in both directions. Robot stopped.")
@@ -698,6 +747,11 @@ class MainWindow(QMainWindow):
         if self.state.battery_mv is not None:
             self.battery_label.setText(f"{self.state.battery_mv / 1000:.2f} V")
         self._show_loop_dt()
+        if self._tuning_live:
+            for key in self.tuning.rows:
+                self.tuning.show_ack(
+                    key, self.tuner.acked(key), self.tuner.pending(key), self.tuner.stale(key)
+                )
         self._check_link()
 
     def _check_link(self) -> None:
@@ -848,6 +902,7 @@ class MainWindow(QMainWindow):
             if self._current_mode == "drift_test":
                 self._spawn(self._finish_drift_test())
             self._current_mode = None
+            self._set_tuning_mode("config")
         self._update_actions()
 
     def _update_actions(self) -> None:
@@ -860,10 +915,9 @@ class MainWindow(QMainWindow):
         self.scan_button.setEnabled(connected and not running)
         self.stop_button.setEnabled(running)
         self.estop_button.setEnabled(connected)
-        # Config is frozen while a program runs; live tuning is M6.
+        # Ports and geometry are frozen while a program runs; tuning goes live instead.
         for widget in (
             self.port_panel,
             *self.geometry_fields.values(),
-            *self.tuning_fields.values(),
         ):
             widget.setEnabled(not running)

@@ -215,14 +215,14 @@ async def test_heartbeat_reaches_hub_while_running(qapp) -> None:
 
 
 async def test_preset_roundtrip(window, tmp_path) -> None:
-    window.tuning_fields["kp"].setValue(-2.25)
+    window.tuning.rows["KP"].set_value(-2.25)
     window.geometry_fields["axle_track_mm"].setValue(118.5)
     path = tmp_path / "robot.json"
     window.save_preset(path)
-    window.tuning_fields["kp"].setValue(0)
+    window.tuning.rows["KP"].set_value(0)
     window.geometry_fields["axle_track_mm"].setValue(100)
     assert window.load_preset(path)
-    assert window.tuning_fields["kp"].value() == -2.25
+    assert window.tuning.rows["KP"].value() == -2.25
     assert window.current_config().geometry.axle_track_mm == 118.5
     assert window.preset_label.text() == "robot.json"
 

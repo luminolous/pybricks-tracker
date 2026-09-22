@@ -113,6 +113,13 @@ class History:
     def column(self, index: int) -> list[float]:
         return [v[index] for v in self.values]
 
+    def recent(self, index: int, window_ms: float) -> list[float]:
+        """Values of one column from the last `window_ms` before the newest sample."""
+        if not self.t_ms:
+            return []
+        start = self.t_ms[-1] - window_ms
+        return [v[index] for t, v in zip(self.t_ms, self.values, strict=True) if t >= start]
+
 
 @dataclass(frozen=True)
 class Pose:

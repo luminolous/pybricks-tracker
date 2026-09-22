@@ -1,0 +1,16 @@
+{% extends "_base.py.j2" %}
+{% block control %}
+# Calibration: hold still and stream reflection. The base loop already sends
+# it in every T line; the app samples black and white from those.
+
+
+def setup():
+    global STATE
+    STATE = "IDLE"
+    robot.stop()
+
+
+def control_step(n, refl):
+    global STEER
+    STEER = 0
+{% endblock %}

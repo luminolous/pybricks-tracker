@@ -135,7 +135,7 @@ def test_live_tuning_values_are_rendered() -> None:
     ("config", "message"),
     [
         (without(Role.WHEEL_LEFT), "Assign a left and a right wheel"),
-        (without(Role.LINE_SENSOR), "needs a line sensor"),
+        (without(Role.LINE_SENSOR), "line follower program needs a line sensor"),
     ],
 )
 def test_invalid_configs_raise(config: RobotConfig, message: str) -> None:
@@ -198,3 +198,24 @@ def test_loop_dt_is_the_full_period(source: str) -> None:
     # read before reset, at the top of the iteration: includes the previous wait
     assert body.index("dt_ms = period.time()") < body.index("period.reset()")
     assert body.index("period.reset()") < body.index("check_commands()")
+
+
+def test_every_tuning_command_is_acknowledged(source: str) -> None:
+    check = function(source, "check_commands")
+    for key, var in (("KP", "KP"), ("KD", "KD"), ("SPD", "BASE_SPEED"), ("THR", "OBSTACLE_MM")):
+        assert f'emit_e("ACK", "{key}:{{}}".format({var}))' in check
+    # the ACK follows the assignment, so a failed parse sends none
+    assert check.index("KP = float(value)") < check.index('emit_e("ACK", "KP:')
+
+
+async def test_calibrate_program_compiles_and_holds_still(tmp_path: Path) -> None:
+    path = generate(DEFAULT, "calibrate", out_dir=tmp_path)
+    assert len(await compile_file(str(tmp_path), path.name, 6)) > 0
+    source = path.read_text(encoding="utf-8")
+    control = function(source, "control_step")
+    assert "drive" not in control and "STEER = 0" in control
+
+
+def test_calibrate_needs_a_line_sensor() -> None:
+    with pytest.raises(GeneratorError, match="calibrate program needs a line sensor"):
+        render(without(Role.LINE_SENSOR), "calibrate")
