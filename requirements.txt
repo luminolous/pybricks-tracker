@@ -10,3 +10,4 @@ bleak==3.0.2
 pytest==9.1.1
 pytest-asyncio==1.4.0
 ruff==0.16.8
+reactivex==5.1.0  # pybricksdev dependency, used directly by the fake hub in tests
