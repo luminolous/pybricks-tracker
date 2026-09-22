@@ -1,0 +1,789 @@
+<title>Pybricks Tracker Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root {
+  color-scheme: dark;
+  --ground: #06080b;
+  --win: #0c1015;
+  --surface: #0f141a;
+  --sunken: #090d11;
+  --field: #141a21;
+  --line: #1c242d;
+  --line-strong: #2a343f;
+  --text: #e4eaf0;
+  --muted: #8994a0;
+  --dim: #5a6571;
+  --accent: #3fd0e6;
+  --accent-dim: rgba(63, 208, 230, 0.14);
+  --warn: #f2b344;
+  --danger: #ff4d57;
+  --ok: #5fd39a;
+  --trail: #f4efe4;
+  --overlay: #a48cff;
+  --f-ui: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--f-ui);
+  padding-inline: 16px;
+  padding-block: 20px 40px;
+}
+.page { max-width: 1400px; margin: 0 auto; display: grid; gap: 18px; }
+button { font: inherit; color: inherit; }
+
+/* ---------- page chrome ---------- */
+.intro { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; }
+.intro h1 { font: 600 15px/1.3 var(--f-ui); margin: 0 0 4px; }
+.intro p { margin: 0; color: var(--muted); font-size: 13.5px; max-width: 70ch; line-height: 1.5; }
+.demo-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn {
+  font: 500 12px var(--f-ui); background: var(--field); border: 1px solid var(--line-strong);
+  border-radius: 3px; padding: 7px 11px; cursor: pointer; color: var(--text);
+}
+.btn:hover { border-color: var(--muted); }
+.btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.btn:focus-visible, .tab:focus-visible, .estop:focus-visible, .act:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.stage { width: 100%; position: relative; overflow: hidden; }
+.stage-inner { width: 1280px; height: 800px; transform-origin: 0 0; position: absolute; top: 0; left: 0; }
+
+/* ---------- app window ---------- */
+.app {
+  width: 1280px; height: 800px; background: var(--win); border: 1px solid var(--line-strong);
+  display: grid; grid-template-columns: 252px 1fr 340px; grid-template-rows: 44px 1fr 92px;
+  position: relative; overflow: hidden; font-size: 12.5px;
+}
+.num { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.cap { font: 500 10.5px/1 var(--f-ui); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.lbl { font-size: 11px; color: var(--muted); }
+.sec { padding: 14px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; align-content: start; }
+.sec-head { display: flex; justify-content: space-between; align-items: baseline; }
+.sec-head .aux { color: var(--dim); font-size: 11px; }
+
+/* header: camera-style top bar of plain text segments */
+.header { grid-column: 1 / -1; display: flex; align-items: stretch; border-bottom: 1px solid var(--line-strong); background: var(--surface); }
+.seg { display: flex; align-items: center; gap: 8px; padding: 0 16px; border-right: 1px solid var(--line); white-space: nowrap; }
+.seg.name { font-weight: 600; font-size: 13px; letter-spacing: .02em; width: 252px; }
+.seg .k { color: var(--muted); font-size: 11px; }
+.seg .v { font-size: 13px; }
+.seg .v small { color: var(--muted); font-size: 11px; margin-left: 1px; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.rec { color: var(--danger); font: 500 11px var(--f-mono); display: inline-flex; gap: 6px; align-items: center; }
+.rec::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+.header .fill { flex: 1; border-right: 0; }
+.warn-text { color: var(--warn); }
+.estop {
+  margin: 5px 6px 5px 0; padding: 0 18px; border: 0; border-radius: 3px; cursor: pointer;
+  background: var(--danger); color: #fff; font: 600 13px var(--f-ui); letter-spacing: .12em;
+  display: flex; align-items: center; gap: 12px;
+}
+.estop kbd { font: 500 10px var(--f-mono); letter-spacing: 0; padding: 2px 5px; border: 1px solid rgba(255,255,255,.55); border-radius: 2px; }
+
+/* hazard banner */
+.banner {
+  position: absolute; left: 0; right: 0; top: 44px; z-index: 5; height: 38px;
+  display: flex; align-items: center; gap: 14px; padding: 0 16px 0 0;
+  background: #2a0c10; border-bottom: 1px solid var(--danger); color: #ffd9dc; font-size: 13px;
+}
+.banner .hz { align-self: stretch; width: 120px; background: repeating-linear-gradient(135deg, var(--danger) 0 10px, #2a0c10 10px 20px); }
+.banner strong { color: #fff; font-weight: 600; letter-spacing: .08em; }
+.banner .num { margin-left: auto; color: #ff9aa1; font-size: 12px; }
+
+/* left column */
+.left { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
+.ports-table { width: 100%; border-collapse: collapse; }
+.ports-table th { text-align: left; font: 500 10.5px var(--f-ui); color: var(--dim); padding: 0 0 6px; }
+.ports-table td { padding: 6px 0; border-top: 1px solid var(--line); vertical-align: middle; }
+.ports-table td:first-child { width: 22px; font: 500 12px var(--f-mono); color: var(--muted); }
+.ports-table tr.on td:first-child { color: var(--accent); }
+.ports-table .dev { color: var(--text); }
+.ports-table tr.off .dev { color: var(--dim); }
+.ports-table td:last-child { text-align: right; }
+.dd { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 7px; background: var(--field); border: 1px solid var(--line-strong); border-radius: 2px; font-size: 11.5px; }
+.dd::after { content: ""; width: 4px; height: 4px; border-right: 1px solid var(--muted); border-bottom: 1px solid var(--muted); transform: rotate(45deg) translateY(-2px); }
+.dd.none { color: var(--dim); background: transparent; }
+.dir { color: var(--dim); font: 400 10.5px var(--f-mono); margin-left: 6px; }
+.valid { color: var(--ok); font-size: 11.5px; }
+.geo { display: grid; grid-template-columns: 1fr auto; row-gap: 8px; align-items: center; }
+.geo .in { font-size: 13px; background: var(--field); border: 1px solid var(--line-strong); border-radius: 2px; padding: 3px 7px; min-width: 76px; text-align: right; }
+.geo .in small { color: var(--dim); font-size: 10.5px; margin-left: 4px; }
+.presets { display: flex; gap: 6px; }
+.presets .dd { flex: 1; justify-content: space-between; }
+.link { background: none; border: 0; padding: 0 2px; color: var(--muted); font-size: 11.5px; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-strong); cursor: pointer; }
+
+.actions { padding: 14px 16px; display: grid; gap: 6px; }
+.runrow { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+.act {
+  display: flex; justify-content: space-between; align-items: center; padding: 7px 10px;
+  background: transparent; border: 1px solid var(--line); border-radius: 2px; cursor: pointer; font-size: 12.5px; text-align: left;
+}
+.act:hover { border-color: var(--line-strong); background: var(--field); }
+.act kbd { font: 400 10.5px var(--f-mono); color: var(--dim); }
+.act.run { background: var(--accent); border-color: var(--accent); color: #062026; font-weight: 600; }
+.act.run kbd { color: #0b3a42; }
+.act.stop { border-color: var(--line-strong); }
+
+/* map */
+.map { display: grid; grid-template-rows: 30px 1fr 66px; grid-template-columns: 1fr 64px; min-height: 0; min-width: 0; }
+.tape { grid-column: 1; grid-row: 1; background: var(--surface); border-bottom: 1px solid var(--line); position: relative; overflow: hidden; }
+.tape svg { width: 100%; height: 100%; display: block; }
+.tape svg text { font: 400 9.5px var(--f-mono); fill: var(--muted); }
+.map-canvas { grid-column: 1; grid-row: 2; position: relative; overflow: hidden; background: var(--sunken); }
+.map-canvas > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map-canvas svg text { font-family: var(--f-mono); }
+.map-note { position: absolute; left: 34px; top: 10px; font: 400 10.5px var(--f-mono); color: var(--dim); z-index: 2; }
+
+.swatch { position: absolute; right: 12px; top: 12px; z-index: 2; width: 132px; background: var(--surface); border: 1px solid var(--line-strong); display: grid; }
+.swatch .chip { height: 36px; background: #e8ecef; border-bottom: 1px solid var(--line-strong); }
+.swatch .body { padding: 7px 9px 8px; display: grid; gap: 4px; }
+.swatch .row { display: flex; justify-content: space-between; align-items: baseline; }
+.swatch .cls { font-weight: 600; font-size: 12px; letter-spacing: .06em; }
+.swatch .refl { font-size: 17px; }
+.swatch .hsv { font: 400 10px var(--f-mono); color: var(--muted); display: flex; justify-content: space-between; }
+
+.tools { grid-column: 2; grid-row: 1 / span 3; border-left: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; }
+.tool { padding: 12px 0; text-align: center; border-bottom: 1px solid var(--line); display: grid; gap: 3px; font-size: 11px; color: var(--muted); }
+.tool b { font: 500 11px var(--f-mono); color: var(--text); }
+.tool.on b { color: var(--accent); }
+.tools .spacer { flex: 1; }
+
+.readout { grid-column: 1; grid-row: 3; border-top: 1px solid var(--line-strong); display: grid; grid-template-columns: repeat(5, 1fr) 1.2fr; background: var(--surface); }
+.ro { display: grid; align-content: center; gap: 5px; padding: 0 16px; border-right: 1px solid var(--line); }
+.ro:last-child { border-right: 0; }
+.ro .v { font-size: 21px; font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.ro .v small { font: 400 11px var(--f-ui); color: var(--muted); margin-left: 4px; }
+.state-v { font: 600 15px var(--f-mono) !important; letter-spacing: .06em; color: var(--accent); }
+.state-v.search { color: var(--warn); }
+.state-v.obstacle, .state-v.stop { color: var(--danger); }
+
+/* right column */
+.right { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
+.tabs { display: flex; border-bottom: 1px solid var(--line); padding: 0 8px; }
+.tab { background: none; border: 0; padding: 12px 8px 10px; font-size: 12px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.plot-wrap { padding: 12px 16px 14px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+.plot-top { display: flex; justify-content: space-between; align-items: baseline; }
+.plot-top .big { font: 400 24px var(--f-mono); }
+.plot-top .big small { font: 400 11px var(--f-ui); color: var(--muted); margin-left: 4px; }
+.plot-top .meta { font: 400 10.5px var(--f-mono); color: var(--dim); text-align: right; line-height: 1.5; }
+#plot { width: 100%; height: 150px; display: block; background: var(--sunken); border: 1px solid var(--line); }
+#plot text { font: 400 9px var(--f-mono); fill: var(--dim); }
+.legend { display: flex; gap: 14px; font-size: 11px; color: var(--muted); min-height: 14px; }
+.legend i { display: inline-block; width: 12px; height: 2px; vertical-align: middle; margin-right: 6px; }
+
+.tune-row { display: grid; grid-template-columns: 38px 1fr 58px; gap: 12px; align-items: center; }
+.tune-row .k { font: 500 11.5px var(--f-mono); color: var(--muted); }
+.tune-row .val { text-align: right; font-size: 14px; }
+.tune-row .ack { grid-column: 2 / 4; font: 400 10.5px var(--f-mono); color: var(--dim); margin-top: -8px; display: flex; justify-content: space-between; }
+.tune-row .ack .ok { color: var(--ok); }
+.tune-row .ack .pending { color: var(--warn); }
+.slider { height: 14px; position: relative; }
+.slider::before { content: ""; position: absolute; left: 0; right: 0; top: 6px; height: 2px; background: var(--line-strong); }
+.slider i { position: absolute; left: 0; top: 6px; height: 2px; background: var(--accent); }
+.slider b { position: absolute; top: 2px; width: 4px; height: 10px; margin-left: -2px; background: var(--text); }
+.slider u { position: absolute; top: 0; height: 14px; width: 1px; background: var(--warn); }
+
+.events { flex: 1; min-height: 0; overflow: hidden; border-bottom: 0; }
+.ev-list { display: grid; }
+.ev { display: grid; grid-template-columns: 46px 52px 1fr; gap: 8px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.ev .t { font: 400 11px var(--f-mono); color: var(--dim); }
+.ev .kind { font: 500 11px var(--f-mono); }
+.kind.warn { color: var(--warn); } .kind.danger { color: var(--danger); } .kind.ok { color: var(--ok); } .kind.info { color: var(--accent); }
+
+/* console */
+.console { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 300px; border-top: 1px solid var(--line-strong); background: var(--sunken); min-height: 0; }
+.console-lines { padding: 8px 16px; font: 400 11.5px/1.5 var(--f-mono); color: var(--dim); overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+.console-lines div { white-space: nowrap; }
+.console-lines .p { color: var(--muted); }
+.console-lines .e { color: var(--warn); }
+.console-lines .dbg { color: var(--text); }
+.console-side { border-left: 1px solid var(--line); padding: 10px 16px; display: grid; gap: 8px; align-content: start; }
+.search { padding: 5px 8px; border-radius: 2px; background: var(--field); border: 1px solid var(--line-strong); color: var(--dim); font: 400 11px var(--f-mono); }
+.checks { display: flex; gap: 16px; }
+.check { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; }
+.box { width: 11px; height: 11px; border: 1px solid var(--muted); border-radius: 1px; position: relative; }
+.box.on { border-color: var(--accent); background: var(--accent); }
+.box.on::after { content: ""; position: absolute; left: 3px; top: 0; width: 3px; height: 6px; border-right: 1.5px solid #062026; border-bottom: 1.5px solid #062026; transform: rotate(45deg); }
+
+.app.offline .readout .v, .app.offline .plot-top .big { color: var(--dim); }
+.app.offline .dot { background: var(--danger); }
+
+/* header additions */
+.seg.name { justify-content: space-between; }
+.hbtn { background: transparent; border: 1px solid var(--line-strong); border-radius: 2px; padding: 3px 8px; font-size: 11px; color: var(--muted); cursor: pointer; }
+.hbtn:hover { color: var(--text); border-color: var(--muted); }
+.runstate { font: 600 11px var(--f-mono); letter-spacing: .06em; color: var(--ok); }
+.runstate.stopped { color: var(--muted); }
+.runstate.replay { color: var(--accent); }
+.batt { width: 24px; height: 11px; border: 1px solid var(--muted); border-radius: 1px; padding: 1px; position: relative; }
+.batt::after { content: ""; position: absolute; right: -3px; top: 3px; width: 2px; height: 3px; background: var(--muted); }
+.batt i { display: block; height: 100%; background: var(--text); }
+.danger-text { color: var(--danger); }
+.dd.sm { padding: 3px 5px 3px 6px; font: 400 10.5px var(--f-mono); }
+
+/* swatch header */
+.sw-head { font-size: 10.5px; color: var(--muted); padding: 5px 9px; border-bottom: 1px solid var(--line-strong); }
+
+/* overlay legend with run metrics */
+.overlay-legend { position: absolute; left: 34px; bottom: 30px; z-index: 2; background: var(--surface); border: 1px solid var(--line-strong); padding: 6px 10px; }
+.overlay-legend table { border-collapse: collapse; font-size: 11px; }
+.overlay-legend th { font: 500 10px var(--f-ui); color: var(--dim); text-align: right; padding: 0 0 4px 14px; }
+.overlay-legend th:first-child, .overlay-legend td:first-child { text-align: left; padding-left: 0; }
+.overlay-legend td { padding: 3px 0 3px 14px; text-align: right; border-top: 1px solid var(--line); white-space: nowrap; }
+.overlay-legend td i { display: inline-block; width: 12px; height: 2px; vertical-align: middle; margin-right: 7px; }
+
+/* tuning value as an exact-entry field */
+.tune-row .val { background: var(--field); border: 1px solid var(--line-strong); border-radius: 2px; padding: 2px 6px; font-size: 13px; }
+
+/* replay mode */
+.app.replay .console { grid-template-rows: 36px 1fr; }
+.scrub { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.scrub-btn { background: var(--field); border: 1px solid var(--line-strong); border-radius: 2px; width: 28px; height: 22px; font-size: 9px; color: var(--text); cursor: pointer; }
+.scrub-t { font-size: 11px; color: var(--muted); }
+.scrub-track { flex: 1; height: 4px; background: var(--line-strong); position: relative; }
+.scrub-track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+.scrub-track b { position: absolute; top: -5px; width: 3px; height: 14px; margin-left: -1px; background: var(--text); }
+.scrub-track u { position: absolute; top: -7px; width: 1px; height: 4px; }
+.speed { display: flex; gap: 2px; font: 400 11px var(--f-mono); }
+.speed span { padding: 2px 6px; color: var(--dim); border: 1px solid transparent; }
+.speed span.on { color: var(--accent); border-color: var(--line-strong); }
+.app.replay .rec { color: var(--accent); }
+.app.replay .rec::before { background: var(--accent); }
+.app.replay .tuning { opacity: .35; }
+.app.replay #tune-aux { color: var(--warn); }
+.app.replay #btn-run { background: transparent; border-color: var(--line); color: var(--dim); cursor: not-allowed; }
+.app.replay #btn-run kbd { color: var(--dim); }
+.app.replay .estop { background: var(--field); color: var(--dim); }
+.app.replay .estop kbd { border-color: var(--line-strong); }
+
+/* ---------- notes below the mockup ---------- */
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; padding-top: 8px; border-top: 1px solid var(--line); }
+.notes h2 { margin: 0 0 10px; font: 600 13px var(--f-ui); }
+.notes p, .notes li { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0; }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.notes code { font: 400 12px var(--f-mono); color: var(--text); }
+.strip { display: flex; flex-wrap: wrap; border: 1px solid var(--line-strong); }
+.strip div { flex: 1 1 80px; padding: 34px 8px 6px; font: 400 10.5px var(--f-mono); color: var(--muted); border-right: 1px solid var(--line); position: relative; }
+.strip div:last-child { border-right: 0; }
+.strip div::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 28px; background: var(--c); }
+</style>
+
+<div class="page">
+  <div class="intro">
+    <div>
+      <h1>Pybricks Tracker, main window (revision 3)</h1>
+      <p>1280 × 800 layout proposal. Numbers come from a replayed sample run at 20 Hz, not from a real robot.</p>
+    </div>
+    <div class="demo-controls">
+      <button class="btn" id="btn-pause" type="button" aria-pressed="false">Pause sample</button>
+      <button class="btn" id="btn-overlay" type="button" aria-pressed="false">Overlay previous run</button>
+      <button class="btn" id="btn-replay" type="button" aria-pressed="false">Replay mode</button>
+      <button class="btn" id="btn-lost" type="button" aria-pressed="false">Simulate link loss</button>
+    </div>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="stage-inner" id="stage-inner">
+      <div class="app" id="app">
+
+        <header class="header">
+          <div class="seg name"><span>Pybricks Tracker</span><button class="hbtn" type="button">Disconnect</button></div>
+          <div class="seg"><span class="dot"></span><span class="v">hub-51515</span><span class="k" id="conn-text">connected</span></div>
+          <div class="seg"><span class="runstate" id="runstate">RUNNING</span><span class="v">line_follower</span></div>
+          <div class="seg"><span class="rec" id="rec">REC 00:00.0</span></div>
+          <div class="seg fill"></div>
+          <div class="seg" title="Hub battery"><span class="batt"><i style="width:78%"></i></span><span class="v num">7.82<small>V</small></span></div>
+          <div class="seg"><span class="k">loop</span><span class="v num" id="h-dt">11<small>ms</small></span></div>
+          <div class="seg"><span class="k">rx</span><span class="v num" id="h-rate">20<small>Hz</small></span></div>
+          <button class="estop" type="button">E-STOP <kbd>Space</kbd></button>
+        </header>
+
+        <div class="banner" id="banner" hidden>
+          <span class="hz"></span>
+          <strong>LINK LOST</strong>
+          <span>No telemetry for 2 s. The hub watchdog will stop the robot. Go check it.</span>
+          <span class="num" id="banner-t">last T 2.0 s ago</span>
+        </div>
+
+        <!-- left -->
+        <aside class="left">
+          <section class="sec">
+            <div class="sec-head"><span class="cap">Ports</span><span class="aux">scanned 12 s ago</span></div>
+            <table class="ports-table">
+              <thead><tr><th></th><th>Device</th><th style="text-align:right">Role</th></tr></thead>
+              <tbody>
+                <tr class="off"><td>A</td><td class="dev">empty</td><td><span class="dd none">unused</span></td></tr>
+                <tr class="off"><td>B</td><td class="dev">empty</td><td><span class="dd none">unused</span></td></tr>
+                <tr class="on"><td>C</td><td class="dev">Motor</td><td><span class="dd">left wheel</span> <span class="dd sm">CW</span></td></tr>
+                <tr class="on"><td>D</td><td class="dev">Color sensor</td><td><span class="dd">line</span></td></tr>
+                <tr class="on"><td>E</td><td class="dev">Ultrasonic</td><td><span class="dd">distance</span></td></tr>
+                <tr class="on"><td>F</td><td class="dev">Motor</td><td><span class="dd">right wheel</span> <span class="dd sm">CCW</span></td></tr>
+              </tbody>
+            </table>
+            <div class="valid">Config valid. Ready to run.</div>
+          </section>
+
+          <section class="sec">
+            <span class="cap">Geometry</span>
+            <div class="geo">
+              <span class="lbl">Wheel diameter</span><span class="in num">56<small>mm</small></span>
+              <span class="lbl">Axle track</span><span class="in num">112<small>mm</small></span>
+              <span class="lbl">Sensor offset</span><span class="in num">40<small>mm</small></span>
+            </div>
+            <div class="presets"><span class="dd">configs/default.json</span><button class="link" type="button">Save</button><button class="link" type="button">Load</button></div>
+          </section>
+
+          <section class="actions">
+            <div class="runrow">
+              <button class="act run" id="btn-run" type="button">Run <kbd>F5</kbd></button>
+              <button class="act stop" type="button">Stop <kbd>Esc</kbd></button>
+            </div>
+            <button class="act" type="button">Scan ports <kbd>Ctrl+P</kbd></button>
+            <button class="act" type="button">Calibrate sensor <kbd>Ctrl+K</kbd></button>
+            <button class="act" type="button">Drift test <kbd>Ctrl+D</kbd></button>
+            <button class="act" type="button">Export run <kbd>Ctrl+E</kbd></button>
+            <button class="act" type="button">Hub program <kbd>Ctrl+U</kbd></button>
+          </section>
+        </aside>
+
+        <!-- map -->
+        <section class="map">
+          <div class="tape"><svg id="tape" viewBox="0 0 624 30" preserveAspectRatio="none"></svg></div>
+          <div class="map-canvas">
+            <svg id="map-svg" viewBox="0 0 624 568" preserveAspectRatio="xMidYMid slice" aria-label="Robot map"></svg>
+            <div class="map-note">grid 10 cm · origin = run start</div>
+            <div class="overlay-legend" id="overlay-legend" hidden>
+              <table>
+                <thead><tr><th>Run</th><th>Time</th><th>Path</th><th>RMS err</th><th>Lost</th></tr></thead>
+                <tbody>
+                  <tr><td><i style="background:var(--trail)"></i>now · KP −1.80</td><td class="num">00:32</td><td class="num">3.84 m</td><td class="num">9.6</td><td class="num">1</td></tr>
+                  <tr><td><i style="background:var(--overlay)"></i>10:04 · KP −1.20</td><td class="num">00:36</td><td class="num">4.12 m</td><td class="num">14.1</td><td class="num">3</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="swatch">
+              <div class="sw-head">Line sensor · D</div>
+              <div class="chip" id="sw-chip"></div>
+              <div class="body">
+                <div class="row"><span class="cls" id="sw-cls">WHITE</span><span class="refl num" id="sw-refl">88</span></div>
+                <div class="hsv"><span>H 210</span><span>S 4</span><span id="sw-v">V 91</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="tools">
+            <div class="tool">Fit<b>F</b></div>
+            <div class="tool">Follow<b>off</b></div>
+            <div class="tool">Origin<b>ORG</b></div>
+            <div class="tool">Grid<b>10cm</b></div>
+            <div class="spacer"></div>
+            <div class="tool on">Trail<b>plain</b></div>
+            <div class="tool" id="tool-overlay">Overlay<b id="overlay-count">0</b></div>
+          </div>
+          <div class="readout">
+            <div class="ro"><span class="lbl">x</span><span class="v" id="r-x">0.0<small>mm</small></span></div>
+            <div class="ro"><span class="lbl">y</span><span class="v" id="r-y">0.0<small>mm</small></span></div>
+            <div class="ro"><span class="lbl">heading</span><span class="v" id="r-h">0.0<small>°</small></span></div>
+            <div class="ro"><span class="lbl">reflection</span><span class="v" id="r-r">52</span></div>
+            <div class="ro"><span class="lbl">steer</span><span class="v" id="r-s">0<small>°/s</small></span></div>
+            <div class="ro"><span class="lbl">state</span><span class="v state-v" id="r-state">FOLLOW</span></div>
+          </div>
+        </section>
+
+        <!-- right -->
+        <aside class="right">
+          <div class="tabs" role="tablist">
+            <button class="tab" role="tab" aria-selected="true" data-tab="refl" type="button">Reflection</button>
+            <button class="tab" role="tab" aria-selected="false" data-tab="err" type="button">Error / steer</button>
+            <button class="tab" role="tab" aria-selected="false" data-tab="load" type="button">Motor load</button>
+            <button class="tab" role="tab" aria-selected="false" data-tab="dt" type="button">Loop dt</button>
+          </div>
+          <div class="plot-wrap">
+            <div class="plot-top"><span class="big" id="p-big">52</span><span class="meta" id="p-meta">last 10 s<br>edge 52</span></div>
+            <svg id="plot" viewBox="0 0 308 150" preserveAspectRatio="none"></svg>
+            <div class="legend" id="legend"></div>
+          </div>
+
+          <section class="sec tuning">
+            <div class="sec-head"><span class="cap">Tuning</span><span class="aux" id="tune-aux">sent live, no re-upload</span></div>
+            <div class="tune-row"><span class="k">KP</span><div class="slider"><i style="width:45%"></i><b style="left:45%"></b></div><span class="val num">−1.80</span>
+              <span class="ack"><span>hub</span><span class="ok">−1.80</span></span></div>
+            <div class="tune-row"><span class="k">KD</span><div class="slider"><i style="width:62%"></i><u style="left:56%"></u><b style="left:62%"></b></div><span class="val num">−4.50</span>
+              <span class="ack"><span>hub</span><span class="pending">−4.20, waiting</span></span></div>
+            <div class="tune-row"><span class="k">SPD</span><div class="slider"><i style="width:35%"></i><b style="left:35%"></b></div><span class="val num">70</span>
+              <span class="ack"><span>hub, mm/s</span><span class="ok">70</span></span></div>
+          </section>
+
+          <section class="sec events">
+            <div class="sec-head"><span class="cap">Events</span><span class="aux" id="ev-count">0</span></div>
+            <div class="ev-list" id="ev-list"></div>
+          </section>
+        </aside>
+
+        <!-- console -->
+        <section class="console">
+          <div class="scrub" id="scrub" hidden>
+            <button class="scrub-btn" type="button" aria-label="Pause replay">❚❚</button>
+            <span class="num scrub-t" id="scrub-t">00:20.0</span>
+            <div class="scrub-track" id="scrub-track"><i id="scrub-fill"></i><b id="scrub-head"></b></div>
+            <span class="num scrub-t">00:32.0</span>
+            <span class="speed"><span>0.5×</span><span class="on">1×</span><span>2×</span><span>4×</span></span>
+          </div>
+          <div class="console-lines" id="console"></div>
+          <div class="console-side">
+            <div class="search">filter…</div>
+            <div class="checks">
+              <span class="check"><span class="box"></span>Hide protocol</span>
+              <span class="check"><span class="box on"></span>Auto-scroll</span>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div>
+      <h2>Palette</h2>
+      <div class="strip">
+        <div style="--c:#0c1015">#0C1015 window</div>
+        <div style="--c:#0f141a">#0F141A surface</div>
+        <div style="--c:#2a343f">#2A343F line</div>
+        <div style="--c:#e4eaf0">#E4EAF0 text</div>
+        <div style="--c:#3fd0e6">#3FD0E6 accent</div>
+        <div style="--c:#f4efe4">#F4EFE4 trail</div>
+        <div style="--c:#a48cff">#A48CFF overlay run</div>
+        <div style="--c:#f2b344">#F2B344 warn</div>
+        <div style="--c:#ff4d57">#FF4D57 stop</div>
+      </div>
+    </div>
+    <div>
+      <h2>What changed</h2>
+      <ul>
+        <li>Revision 3 restores items revision 2 dropped or never had: battery gauge, run state, Connect/Disconnect, loop dt red above 2×, motor direction dropdowns, exact-entry tuning fields, overlay with run metrics, replay mode with a timeline.</li>
+        <li>One flat surface split by hairlines instead of floating rounded cards. No glow, no gradients.</li>
+        <li>Plots moved into tabs, which frees room for tuning and events.</li>
+        <li>Instrument details from the robot's own world: a heading tape above the map, centimetre rulers on its edges, protocol event codes in the event list.</li>
+        <li>Actions are a plain list with keyboard shortcuts. Run is the only filled button.</li>
+        <li>One type family: IBM Plex Sans for labels, IBM Plex Mono for every number.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const NS = "http://www.w3.org/2000/svg";
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const C = { text: "#e4eaf0", muted: "#8994a0", dim: "#5a6571", line: "#1c242d", lineS: "#2a343f", accent: "#3fd0e6", warn: "#f2b344", danger: "#ff4d57", ok: "#5fd39a", trail: "#f4efe4", sunken: "#090d11" };
+  const el = (tag, attrs, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    parent.appendChild(e);
+    return e;
+  };
+
+  /* scale window to available width */
+  const stage = $("stage"), inner = $("stage-inner");
+  const fit = () => {
+    const s = Math.min(1, stage.clientWidth / 1280);
+    inner.style.transform = `scale(${s})`;
+    stage.style.height = `${800 * s}px`;
+  };
+  new ResizeObserver(fit).observe(stage);
+  fit();
+
+  /* sample course (mm) */
+  const N = 640;
+  const base = [];
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    base.push({ x: 620 * Math.sin(a) + 40 * Math.sin(3 * a), y: 330 * (1 - Math.cos(a)) + 25 * Math.sin(2 * a) });
+  }
+  const pose = base.map((p, i) => {
+    const q = base[(i + 1) % N];
+    const h = Math.atan2(q.y - p.y, q.x - p.x);
+    const wob = 6 * Math.sin(i * 0.9) + 3 * Math.sin(i * 2.3);
+    return { x: p.x - wob * Math.sin(h), y: p.y + wob * Math.cos(h), h };
+  });
+
+  /* map */
+  const svg = $("map-svg");
+  const W = 624, H = 568, S = 0.36; // px per mm, 10 cm = 36 px
+  const ox = W / 2 - 10, oy = H / 2 + 130;
+  const toPx = (p) => [ox + p.x * S, oy - p.y * S];
+  const step = 100 * S;
+  for (let k = -12; k <= 12; k++) {
+    const gx = ox + k * step, gy = oy + k * step;
+    const major = k % 5 === 0;
+    const stroke = k === 0 ? "#26313c" : major ? "#18212a" : "#121920";
+    if (gx > 0 && gx < W) el("line", { x1: gx, y1: 0, x2: gx, y2: H, stroke, "stroke-width": 1 }, svg);
+    if (gy > 0 && gy < H) el("line", { x1: 0, y1: gy, x2: W, y2: gy, stroke, "stroke-width": 1 }, svg);
+  }
+  // rulers on left and bottom edges, labelled in cm relative to origin
+  el("rect", { x: 0, y: 0, width: 26, height: H, fill: "#0c1015" }, svg);
+  el("rect", { x: 0, y: H - 20, width: W, height: 20, fill: "#0c1015" }, svg);
+  el("line", { x1: 26, y1: 0, x2: 26, y2: H - 20, stroke: C.lineS }, svg);
+  el("line", { x1: 26, y1: H - 20, x2: W, y2: H - 20, stroke: C.lineS }, svg);
+  for (let cm = -80; cm <= 80; cm += 2) {
+    const gx = ox + cm * 10 * S, gy = oy - cm * 10 * S;
+    const long = cm % 10 === 0;
+    if (gy > 4 && gy < H - 24) {
+      el("line", { x1: 26 - (long ? 8 : 4), y1: gy, x2: 26, y2: gy, stroke: long ? C.muted : C.dim }, svg);
+      if (long) el("text", { x: 15, y: gy + 3, fill: C.dim, "font-size": 8.5, "text-anchor": "end" }, svg).textContent = cm;
+    }
+    if (gx > 30 && gx < W - 4) {
+      el("line", { x1: gx, y1: H - 20, x2: gx, y2: H - 20 + (long ? 8 : 4), stroke: long ? C.muted : C.dim }, svg);
+      if (long) el("text", { x: gx, y: H - 5, fill: C.dim, "font-size": 8.5, "text-anchor": "middle" }, svg).textContent = cm;
+    }
+  }
+  el("text", { x: W - 8, y: H - 5, fill: C.muted, "font-size": 8.5, "text-anchor": "end" }, svg).textContent = "x cm";
+  el("text", { x: 4, y: 12, fill: C.muted, "font-size": 8.5 }, svg).textContent = "y";
+  // origin
+  el("path", { d: `M${ox - 9} ${oy}h18M${ox} ${oy - 9}v18`, stroke: C.muted, "stroke-width": 1 }, svg);
+  el("circle", { cx: ox, cy: oy, r: 4, fill: "none", stroke: C.muted }, svg);
+
+  // previous run for the overlay comparison (lower KP: wider, wobblier)
+  const overlay = el("polyline", {
+    fill: "none", stroke: "#a48cff", "stroke-width": 1.4, "stroke-linejoin": "round", opacity: 0.9, display: "none",
+    points: pose.map((p, i) => {
+      const wob = 14 * Math.sin(i * 0.5) + 5 * Math.sin(i * 1.7);
+      return toPx({ x: p.x * 1.03 - wob * Math.sin(p.h), y: p.y * 1.03 + wob * Math.cos(p.h) }).map((v) => v.toFixed(1)).join(",");
+    }).join(" "),
+  }, svg);
+  const trail = el("polyline", { fill: "none", stroke: C.trail, "stroke-width": 1.8, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+  const markers = el("g", {}, svg);
+  const robot = el("g", {}, svg);
+  el("path", { d: "M13 0L-8 -8L-8 8Z", fill: "none", stroke: C.accent, "stroke-width": 1.6, "stroke-linejoin": "round" }, robot);
+  el("line", { x1: -8, y1: 0, x2: 13 + 40 * S, y2: 0, stroke: C.accent, "stroke-width": 1, "stroke-dasharray": "2 2" }, robot);
+  el("circle", { cx: 13 + 40 * S, cy: 0, r: 2, fill: C.accent }, robot);
+
+  /* heading tape */
+  const tape = $("tape");
+  function drawTape(hDeg) {
+    tape.innerHTML = "";
+    const mid = 312, ppd = 3.2;
+    for (let d = Math.floor((hDeg - 105) / 5) * 5; d <= hDeg + 105; d += 5) {
+      const x = mid + (d - hDeg) * ppd;
+      const n = ((d % 360) + 360) % 360;
+      const major = n % 30 === 0;
+      el("line", { x1: x, y1: 30, x2: x, y2: major ? 20 : n % 10 === 0 ? 24 : 27, stroke: major ? C.muted : C.dim }, tape);
+      if (major) el("text", { x, y: 14, "text-anchor": "middle" }, tape).textContent = String(n).padStart(3, "0");
+    }
+    el("rect", { x: mid - 22, y: 2, width: 44, height: 16, fill: "#0f141a", stroke: C.accent }, tape);
+    el("text", { x: mid, y: 14, "text-anchor": "middle", style: `fill:${C.accent}` }, tape).textContent = hDeg.toFixed(0).padStart(3, "0");
+    el("path", { d: `M${mid - 4} 30L${mid} 23L${mid + 4} 30Z`, fill: C.accent }, tape);
+  }
+
+  /* events on the sample run */
+  const EVENTS = {
+    150: { kind: "LOST", cls: "warn", text: "Line lost, searching" },
+    168: { kind: "FOUND", cls: "ok", text: "Line found after 0.9 s" },
+    330: { kind: "OBS", cls: "danger", text: "Obstacle at 48 mm", dist: 48 },
+    470: { kind: "STALL", cls: "danger", text: "Left motor stalled" },
+    639: { kind: "LAP", cls: "info", text: "Lap 1 closed" },
+  };
+  const SEARCH = [150, 168], OBSTACLE = [330, 345];
+  const colorOf = { warn: C.warn, ok: C.ok, danger: C.danger, info: C.accent };
+  function addMarker(i, ev) {
+    const [px, py] = toPx(pose[i]);
+    const c = colorOf[ev.cls];
+    if (ev.kind === "OBS") {
+      const d = (ev.dist + 40) * S;
+      const x = px + Math.cos(pose[i].h) * d, y = py - Math.sin(pose[i].h) * d;
+      el("path", { d: `M${x - 4} ${y - 4}L${x + 4} ${y + 4}M${x + 4} ${y - 4}L${x - 4} ${y + 4}`, stroke: c, "stroke-width": 1.6 }, markers);
+      el("text", { x: x + 7, y: y + 3, fill: c, "font-size": 9 }, markers).textContent = `${ev.dist}mm`;
+    } else {
+      el("line", { x1: px, y1: py, x2: px, y2: py - 16, stroke: c }, markers);
+      el("text", { x: px + 3, y: py - 18, fill: c, "font-size": 9 }, markers).textContent = ev.kind;
+    }
+  }
+
+  /* plot with tabs */
+  const HIST = 200;
+  const hist = { r: [], e: [], s: [], ll: [], lr: [], dt: [] };
+  const BLACK = 8, EDGE = 52, WHITE = 96;
+  const PW = 308, PH = 150;
+  const TABS = {
+    refl: { min: 0, max: 100, series: [["r", C.text, "reflection"]], refs: [[WHITE, "white 96"], [EDGE, "edge 52", true], [BLACK, "black 8"]], big: (h) => `${h.r.at(-1)}`, meta: "last 10 s<br>calibrated 2026-09-23" },
+    err: { min: -60, max: 60, series: [["e", C.text, "error"], ["s", C.accent, "steer ÷ 3"]], refs: [[0, "0"]], big: (h) => `${h.e.at(-1)}<small>err</small>`, meta: "last 10 s<br>KP −1.80, KD −4.50" },
+    load: { min: 0, max: 200, series: [["ll", C.text, "left"], ["lr", C.accent, "right"]], refs: [[150, "stall zone"]], big: (h) => `${h.ll.at(-1)}<small>mNm L</small>`, meta: "last 10 s<br>4 Hz, from D lines" },
+    dt: { min: 0, max: 24, series: [["dt", C.accent, "loop dt"]], refs: [[10, "10 ms nominal", true], [15, "1.5×"]], big: (h) => `${h.dt.at(-1)}<small>ms</small>`, meta: "last 10 s<br>warn above 15 ms" },
+  };
+  let tab = "refl";
+  const plot = $("plot");
+  function drawPlot() {
+    const t = TABS[tab];
+    const y = (v) => PH - 6 - ((v - t.min) / (t.max - t.min)) * (PH - 12);
+    plot.innerHTML = "";
+    for (let k = 1; k < 10; k++) el("line", { x1: (k * PW) / 10, y1: 0, x2: (k * PW) / 10, y2: PH, stroke: "#10161c", "vector-effect": "non-scaling-stroke" }, plot);
+    for (const [v, label, key] of t.refs) {
+      el("line", { x1: 0, y1: y(v), x2: PW, y2: y(v), stroke: key ? "rgba(63,208,230,.45)" : C.lineS, "stroke-dasharray": "3 3", "vector-effect": "non-scaling-stroke" }, plot);
+      el("text", { x: PW - 4, y: y(v) - 3, "text-anchor": "end" }, plot).textContent = label;
+    }
+    for (const [k, color] of t.series) {
+      const arr = hist[k];
+      const pts = arr.map((v, i) => `${((i + HIST - arr.length) / (HIST - 1)) * PW},${y(v).toFixed(1)}`).join(" ");
+      el("polyline", { points: pts, fill: "none", stroke: color, "stroke-width": 1.3, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }, plot);
+    }
+    el("text", { x: 4, y: PH - 4 }, plot).textContent = "−10 s";
+    el("text", { x: PW - 4, y: PH - 4, "text-anchor": "end" }, plot).textContent = "now";
+    $("p-big").innerHTML = t.big(hist);
+    $("p-meta").innerHTML = t.meta;
+  }
+  function drawLegend() {
+    $("legend").innerHTML = TABS[tab].series.map(([, c, name]) => `<span><i style="background:${c}"></i>${name}</span>`).join("");
+  }
+  document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
+    tab = b.dataset.tab;
+    document.querySelectorAll(".tab").forEach((o) => o.setAttribute("aria-selected", String(o === b)));
+    drawLegend();
+    drawPlot();
+  }));
+
+  /* events and console */
+  const evs = [];
+  let evTotal = 0;
+  function pushEvent(tMs, ev) {
+    evs.unshift({ t: (tMs / 1000).toFixed(1) + "s", ev });
+    if (evs.length > 7) evs.pop();
+    evTotal++;
+    $("ev-list").innerHTML = evs.map(({ t, ev }) => `<div class="ev"><span class="t">${t}</span><span class="kind ${ev.cls}">${ev.kind}</span><span>${ev.text}</span></div>`).join("");
+    $("ev-count").textContent = `${evTotal} this run`;
+  }
+  const lines = [];
+  function log(text, cls = "") {
+    lines.push(`<div class="${cls}">${text}</div>`);
+    if (lines.length > 5) lines.shift();
+    $("console").innerHTML = lines.join("");
+  }
+  log("R,line_follower,1", "p");
+  log("S,0,7820,142,1", "p");
+
+  /* simulation */
+  let i = 0, tMs = 0, paused = false, lost = false, lastT = 0, replay = false;
+  // event ticks on the replay timeline
+  for (const k in EVENTS) {
+    const u = document.createElement("u");
+    u.style.left = `${(k / (N - 1)) * 100}%`;
+    u.style.background = colorOf[EVENTS[k].cls];
+    $("scrub-track").appendChild(u);
+  }
+  const trailPts = [];
+  const fmt = (ms) => {
+    const s = ms / 1000, m = Math.floor(s / 60);
+    return `${String(m).padStart(2, "0")}:${(s - m * 60).toFixed(1).padStart(4, "0")}`;
+  };
+  const push = (k, v) => { hist[k].push(v); if (hist[k].length > HIST) hist[k].shift(); };
+
+  function tick(render) {
+    const p = pose[i];
+    const state = i >= SEARCH[0] && i < SEARCH[1] ? "SEARCH" : i >= OBSTACLE[0] && i < OBSTACLE[1] ? "OBSTACLE" : i >= 470 && i < 478 ? "STOP" : "FOLLOW";
+    const refl = state === "SEARCH" ? Math.round(88 + 4 * Math.sin(i)) : Math.round(EDGE + 14 * Math.sin(i * 0.9) + 6 * Math.sin(i * 2.3));
+    const err = refl - EDGE;
+    const steer = state === "SEARCH" ? 120 : state === "FOLLOW" ? Math.round(err * -1.8) : 0;
+    const dt = 10 + Math.round(Math.abs(Math.sin(i * 0.37)) * 3) + (i % 97 === 0 ? 10 : i % 61 === 0 ? 6 : 0);
+    const hDeg = ((p.h * 180) / Math.PI + 360) % 360;
+    const stall = i >= 462 && i < 472 ? 90 : 0;
+    push("r", refl); push("e", err); push("s", Math.round(steer / 3)); push("dt", dt);
+    push("ll", Math.round(62 + 10 * Math.sin(i * 0.2) + stall * 1.1)); push("lr", Math.round(58 + 10 * Math.cos(i * 0.23)));
+    trailPts.push(toPx(p).map((v) => v.toFixed(1)).join(","));
+
+    const ev = EVENTS[i];
+    if (ev) {
+      addMarker(i, ev);
+      pushEvent(tMs, ev);
+      log(`E,${ev.kind},${tMs},${p.x.toFixed(1)},${p.y.toFixed(1)}${ev.dist ? "," + ev.dist : ""}`, "e");
+    }
+    if (i % 4 === 0) log(`T,${tMs},${p.x.toFixed(1)},${p.y.toFixed(1)},${hDeg.toFixed(1)},${refl},${steer},${state}`, "p");
+    if (i % 29 === 0) log(`dbg edge=${EDGE} kp=-1.8 kd=-4.5`, "dbg");
+
+    if (render) {
+      trail.setAttribute("points", trailPts.join(" "));
+      const [rx, ry] = toPx(p);
+      robot.setAttribute("transform", `translate(${rx} ${ry}) rotate(${-hDeg})`);
+      drawTape(hDeg);
+      $("r-x").innerHTML = `${p.x.toFixed(1)}<small>mm</small>`;
+      $("r-y").innerHTML = `${p.y.toFixed(1)}<small>mm</small>`;
+      $("r-h").innerHTML = `${hDeg.toFixed(1)}<small>°</small>`;
+      $("r-r").textContent = refl;
+      $("r-s").innerHTML = `${steer}<small>°/s</small>`;
+      const st = $("r-state");
+      st.textContent = state;
+      st.className = "v state-v " + state.toLowerCase();
+      $("rec").textContent = replay ? `PLAY ${fmt(tMs)}` : `REC ${fmt(tMs)}`;
+      $("h-dt").innerHTML = `${dt}<small>ms</small>`;
+      $("h-dt").classList.toggle("warn-text", dt > 15 && dt <= 20);
+      $("h-dt").classList.toggle("danger-text", dt > 20);
+      const pct = `${(i / (N - 1)) * 100}%`;
+      $("scrub-fill").style.width = pct;
+      $("scrub-head").style.left = pct;
+      $("scrub-t").textContent = fmt(tMs);
+      const cls = refl > 70 ? "WHITE" : refl < 25 ? "BLACK" : "EDGE";
+      $("sw-cls").textContent = cls;
+      const g = Math.round(40 + refl * 2);
+      $("sw-chip").style.background = `rgb(${g},${g + 2},${Math.min(255, g + 6)})`;
+      $("sw-refl").textContent = refl;
+      $("sw-v").textContent = `V ${Math.min(100, refl + 4)}`;
+      drawPlot();
+    }
+    lastT = tMs;
+    i++; tMs += 50;
+    if (i >= N) { i = 0; trailPts.length = 0; }
+  }
+
+  for (let k = 0; k < 399; k++) tick(false);
+  tick(true);
+  drawLegend();
+
+  if (!reduce) setInterval(() => {
+    if (paused) return;
+    if (lost) {
+      tMs += 50;
+      $("banner-t").textContent = `last T ${((tMs - lastT) / 1000).toFixed(1)} s ago`;
+    } else {
+      tick(true);
+    }
+  }, 50);
+
+  $("btn-pause").addEventListener("click", (e) => {
+    paused = !paused;
+    e.currentTarget.setAttribute("aria-pressed", String(paused));
+    e.currentTarget.textContent = paused ? "Resume sample" : "Pause sample";
+  });
+  $("btn-overlay").addEventListener("click", (e) => {
+    const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+    e.currentTarget.setAttribute("aria-pressed", String(on));
+    overlay.setAttribute("display", on ? "inline" : "none");
+    $("overlay-legend").hidden = !on;
+    $("overlay-count").textContent = on ? "1" : "0";
+    $("tool-overlay").classList.toggle("on", on);
+  });
+  $("btn-replay").addEventListener("click", (e) => {
+    replay = !replay;
+    e.currentTarget.setAttribute("aria-pressed", String(replay));
+    $("app").classList.toggle("replay", replay);
+    $("scrub").hidden = !replay;
+    const rs = $("runstate");
+    rs.textContent = replay ? "REPLAY" : "RUNNING";
+    rs.className = "runstate" + (replay ? " replay" : "");
+    $("tune-aux").textContent = replay ? "disabled during replay" : "sent live, no re-upload";
+    $("conn-text").textContent = replay ? "idle" : "connected";
+  });
+  $("btn-lost").addEventListener("click", (e) => {
+    lost = !lost;
+    if (lost) tMs = lastT + 2000;
+    e.currentTarget.setAttribute("aria-pressed", String(lost));
+    $("banner").hidden = !lost;
+    $("app").classList.toggle("offline", lost);
+    $("conn-text").textContent = lost ? "no telemetry" : "connected";
+    $("h-rate").innerHTML = `${lost ? 0 : 20}<small>Hz</small>`;
+    $("banner-t").textContent = "last T 2.0 s ago";
+  });
+})();
+</script>
