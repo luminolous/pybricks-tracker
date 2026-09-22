@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 
 PROTO_VERSION = 1
 PORT_LETTERS = ("A", "B", "C", "D", "E", "F")
+# Every hub-to-PC prefix in protocol.md, decoded yet or not.
+PROTOCOL_PREFIXES = frozenset({"T", "D", "E", "S", "P", "R"})
+
+
+def is_protocol_line(line: str) -> bool:
+    """True when the line carries a protocol prefix; debug prints return False."""
+    return line.strip().partition(",")[0] in PROTOCOL_PREFIXES
 
 
 class DeviceKind(Enum):

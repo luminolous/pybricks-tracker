@@ -7,6 +7,13 @@ above the window toggle overlay, replay mode and link loss.
 The Qt implementation in `app/ui/` follows this file. Where it disagrees with
 `.claude/docs/ui-spec.md`, the mockup wins and the spec gets corrected.
 
+Known deviations in the Qt build:
+
+- Left column is 276 px, not 252. Port rows (device, role, direction) did not
+  fit at real font metrics.
+- Device names are shortened in the port table (`Motor`, `Ultrasonic`); the
+  full name is the tooltip.
+
 ## Tokens
 
 | Token | Hex | Use |

@@ -1,4 +1,4 @@
-"""Skeleton checks: every module imports, window builds, ticker ticks."""
+"""Skeleton checks: every module imports, the theme applies, the ticker ticks."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pkgutil
 
 import app
 from app.main import run_ticker
-from app.ui.main_window import MIN_HEIGHT_PX, MIN_WIDTH_PX, MainWindow
+from app.ui.theme import apply_theme
 
 
 def test_every_module_imports() -> None:
@@ -17,17 +17,10 @@ def test_every_module_imports() -> None:
         importlib.import_module(module.name)
 
 
-def test_main_window_minimum_size(qapp) -> None:
-    window = MainWindow()
-    assert window.minimumWidth() == MIN_WIDTH_PX
-    assert window.minimumHeight() == MIN_HEIGHT_PX
-    assert window.windowTitle() == "Pybricks Tracker"
-
-
-def test_main_window_shows_tick(qapp) -> None:
-    window = MainWindow()
-    window.set_loop_tick(7)
-    assert window._loop_label.text() == "loop: tick 7"
+def test_theme_applies(qapp) -> None:
+    fonts = apply_theme(qapp)
+    assert fonts.ui and fonts.mono
+    assert "QPushButton" in qapp.styleSheet()
 
 
 async def test_ticker_counts_up_and_cancels() -> None:

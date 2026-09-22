@@ -174,17 +174,19 @@ class HubConnection:
         if self._hub is not None:
             raise HubConnectionError("Already connected. Disconnect first.")
         client = self._hub_factory(hub.device)
+        # Set before connecting: the CONNECTED callback fires inside connect().
+        self.hub_name = hub.name
         self._subscribe(client)
         try:
             await client.connect()
         except Exception as exc:
             self._dispose()
+            self.hub_name = None
             self._set_link_state(LinkState.DISCONNECTED)
             raise HubConnectionError(
                 f"Could not connect to {hub.name}: {exc}. {SINGLE_CONNECTION_HINT}"
             ) from exc
         self._hub = client
-        self.hub_name = hub.name
 
     async def disconnect(self) -> None:
         client = self._hub

@@ -5,86 +5,30 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pybricksdev.ble.pybricks import StatusFlag
-from pybricksdev.connections import ConnectionState
-from reactivex.subject import BehaviorSubject, Subject
 
 from app.core.connection import (
     SINGLE_CONNECTION_HINT,
-    DiscoveredHub,
     HubConnection,
     HubConnectionError,
     LineSplitter,
     LinkState,
 )
-
-HUB = DiscoveredHub(name="Pybricks Hub", address="AA:BB", rssi_dbm=-50, device=object())
-
-
-class FakeHub:
-    def __init__(self, device: object, fail_connect: bool = False) -> None:
-        self.device = device
-        self.fail_connect = fail_connect
-        self.connection_state_observable = BehaviorSubject(ConnectionState.DISCONNECTED)
-        self.status_observable = BehaviorSubject(StatusFlag(0))
-        self._stdout = Subject()
-        self.written: list[str] = []
-        self.ran: list[tuple[str | None, bool, bool, bool]] = []
-        self.stopped = 0
-
-    @property
-    def stdout_observable(self) -> Subject:
-        return self._stdout
-
-    async def connect(self) -> None:
-        self.connection_state_observable.on_next(ConnectionState.CONNECTING)
-        if self.fail_connect:
-            self.connection_state_observable.on_next(ConnectionState.DISCONNECTED)
-            raise OSError("device busy")
-        self.connection_state_observable.on_next(ConnectionState.CONNECTED)
-
-    async def disconnect(self) -> None:
-        self.connection_state_observable.on_next(ConnectionState.DISCONNECTING)
-        self.connection_state_observable.on_next(ConnectionState.DISCONNECTED)
-
-    async def run(self, py_path, wait, print_output, line_handler) -> None:
-        self.ran.append((py_path, wait, print_output, line_handler))
-        self.status_observable.on_next(StatusFlag.USER_PROGRAM_RUNNING)
-
-    async def stop_user_program(self) -> None:
-        self.stopped += 1
-        self.status_observable.on_next(StatusFlag(0))
-
-    async def write_string(self, value: str) -> None:
-        self.written.append(value)
-
-    # test helpers
-    def emit(self, chunk: bytes) -> None:
-        self._stdout.on_next(chunk)
-
-    def drop_link(self) -> None:
-        self.connection_state_observable.on_next(ConnectionState.DISCONNECTED)
+from tests.fakes import HUB, FakeHub, FakeHubs
 
 
 class Harness:
     def __init__(self, fail_connect: bool = False) -> None:
-        self.hub: FakeHub | None = None
+        self.fakes = FakeHubs(fail_connect)
         self.states: list[LinkState] = []
         self.running: list[bool] = []
-
-        def factory(device: object) -> FakeHub:
-            self.hub = FakeHub(device, fail_connect)
-            return self.hub
-
-        async def scanner(timeout_s: float) -> list[DiscoveredHub]:
-            return [HUB]
-
-        self.conn = HubConnection(
-            hub_factory=factory,
-            scanner=scanner,
-            on_link_state=self.states.append,
-            on_program_running=self.running.append,
+        self.conn = self.fakes.connection(
+            on_link_state=self.states.append, on_program_running=self.running.append
         )
+
+    @property
+    def hub(self) -> FakeHub:
+        assert self.fakes.hub is not None
+        return self.fakes.hub
 
 
 def drain(conn: HubConnection) -> list[str]:
