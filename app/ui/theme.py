@@ -64,6 +64,7 @@ QLabel[tone="accent"] {{ color: {ACCENT}; }}
 QLabel[tone="ok"] {{ color: {OK}; }}
 QLabel[tone="warn"] {{ color: {WARN}; }}
 QLabel[tone="danger"] {{ color: {DANGER}; }}
+QLabel:disabled {{ color: {DIM}; }}
 QLabel[mono="true"], QPlainTextEdit, QListWidget#hubList {{ font-family: "{fonts.mono}"; }}
 QLabel[cap="true"] {{ color: {MUTED}; font-size: 10px; font-weight: 600; }}
 QLabel[big="true"] {{ font-family: "{fonts.mono}"; font-size: 20px; }}

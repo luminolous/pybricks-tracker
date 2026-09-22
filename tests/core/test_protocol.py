@@ -7,11 +7,14 @@ import pytest
 from app.core.protocol import (
     PROTO_VERSION,
     DeviceKind,
+    Event,
     PortInfo,
     PortScanDone,
     Ready,
+    Telemetry,
     decode_line,
     device_type,
+    encode_command,
 )
 
 
@@ -82,3 +85,48 @@ def test_unknown_device_id_is_logged_not_raised(caplog: pytest.LogCaptureFixture
     result = device_type(999)
     assert result.kind is DeviceKind.UNKNOWN
     assert "999" in caplog.text
+
+
+# -- T and E lines ----------------------------------------------------------
+
+
+def test_decode_telemetry() -> None:
+    assert decode_line("T,1532,245.3,88.1,93.0,47,-12,FOLLOW") == Telemetry(
+        t_ms=1532, x_mm=245.3, y_mm=88.1, heading_deg=93.0, reflection=47, steer=-12, state="FOLLOW"
+    )
+
+
+def test_decode_event_with_and_without_detail() -> None:
+    assert decode_line("E,LOST,12400,245.3,88.1") == Event("LOST", 12400, 245.3, 88.1)
+    assert decode_line("E,OBS,18100,1.0,2.0,48") == Event("OBS", 18100, 1.0, 2.0, "48")
+    assert decode_line("E,WDOG,4000,0.0,0.0,2011").kind == "WDOG"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "T,1532,245.3,88.1,93.0,47,-12",
+        "T,1532,245.3,88.1,93.0,47,-12,",
+        "T,abc,245.3,88.1,93.0,47,-12,FOLLOW",
+        "T,1532,245.3,88.1,93.0,47.5,-12,FOLLOW",
+        "E,NOPE,1,2,3",
+        "E,LOST,1,2",
+        "E,LOST,x,2,3",
+    ],
+)
+def test_malformed_t_and_e_return_none(line: str) -> None:
+    assert decode_line(line) is None
+
+
+def test_encode_commands() -> None:
+    assert encode_command("KP", -1.8) == "KP,-1.8"
+    assert encode_command("SPD", 70.0) == "SPD,70"
+    assert encode_command("THR", 50) == "THR,50"
+    assert encode_command("MODE", "STOP") == "MODE,STOP"
+    assert encode_command("HB") == "HB"
+
+
+@pytest.mark.parametrize(("key", "value"), [("XX", 1), ("MODE", "FLY")])
+def test_encode_rejects_unknown(key: str, value: object) -> None:
+    with pytest.raises(ValueError):
+        encode_command(key, value)

@@ -39,6 +39,7 @@ SINGLE_CONNECTION_HINT = (
 )
 DEFAULT_SCAN_TIMEOUT_S = 5.0
 STDIN_EOL = "\r\n"  # protocol.md: PC to hub lines end with \r\n
+HEARTBEAT_INTERVAL_S = 0.5  # protocol.md: HB every 500 ms, hub watchdog trips at 2 s
 
 
 class LinkState(Enum):
@@ -109,6 +110,22 @@ async def discover_hubs(timeout_s: float = DEFAULT_SCAN_TIMEOUT_S) -> list[Disco
         if PYBRICKS_SERVICE_UUID in adv.service_uuids
     ]
     return sorted(hubs, key=lambda h: -(h.rssi_dbm if h.rssi_dbm is not None else -999))
+
+
+async def run_heartbeat(conn: HubConnection, interval_s: float = HEARTBEAT_INTERVAL_S) -> None:
+    """Send `HB` while a program runs. Cancel to stop.
+
+    A failed write is logged and retried on the next beat: missing a few
+    beats is exactly the case the hub watchdog exists for, so the sender
+    must never crash out.
+    """
+    while True:
+        if conn.connected and conn.program_running:
+            try:
+                await conn.write_line("HB")
+            except HubConnectionError as exc:
+                logger.warning("Heartbeat write failed: %s", exc)
+        await asyncio.sleep(interval_s)
 
 
 class LineSplitter:

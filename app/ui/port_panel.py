@@ -123,6 +123,11 @@ class PortPanel(QFrame):
     def set_scanning(self) -> None:
         self.scan_age.setText("scanning…")
 
+    def set_assignments(self, assignments: dict[str, PortAssignment]) -> None:
+        for port, row in self.rows.items():
+            row.set_assignment(assignments.get(port, PortAssignment()))
+        self._emit()
+
     def assignments(self) -> dict[str, PortAssignment]:
         return {port: row.assignment() for port, row in self.rows.items()}
 
