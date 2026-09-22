@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.core.protocol import DeviceKind, Ready, decode_line
-from app.core.state import History, PortScan, Pose, RobotState, TelemetryWatch
+from app.core.state import History, PortScan, RobotState, TelemetryWatch
 
 SCAN_OUTPUT = ["R,SCAN,1", "P,A,0", "P,B,0", "P,C,48", "P,D,61", "P,E,62", "P,F,48", "P,DONE,0"]
 
@@ -86,9 +86,9 @@ def test_trail_waits_for_imu_ready() -> None:
     state = RobotState()
     feed(state, "S,0,7800,150,0", "T,50,0.0,0.0,0.0,50,0,IDLE")
     assert state.trail == []
-    assert state.pose == Pose(50, 0.0, 0.0, 0.0)
+    assert (state.pose.t_ms, state.pose.x_mm) == (50, 0.0)
     feed(state, "S,600,7800,150,1", "T,650,10.0,2.0,5.0,50,0,FOLLOW")
-    assert state.trail == [Pose(650, 10.0, 2.0, 5.0)]
+    assert [(p.t_ms, p.x_mm, p.y_mm, p.heading_deg) for p in state.trail] == [(650, 10.0, 2.0, 5.0)]
     assert state.battery_mv == 7800
 
 
@@ -146,3 +146,28 @@ def test_detail_feeds_slow_history_and_reset_clears() -> None:
     assert state.fast.column(0) == [47] and state.reflection == 47
     state.reset()
     assert state.detail is None and not state.slow.t_ms and not state.fast.t_ms
+
+
+def test_pose_carries_speed_steer_and_colour() -> None:
+    state = RobotState()
+    feed(
+        state,
+        "S,0,7800,150,1",
+        "T,0,0.0,0.0,0.0,50,0,FOLLOW",
+        "D,20,120,80,60,0,0,10",
+        "T,50,3.0,4.0,0.0,40,-20,FOLLOW",
+    )
+    last = state.trail[-1]
+    assert last.speed_mm_s == 100.0  # 5 mm in 50 ms
+    assert last.steer == -20 and last.reflection == 40
+    assert last.hsv == (120, 80, 60)
+    assert state.trail[0].hsv is None
+    assert state.path_mm == 5.0
+    assert state.reflection_n == 2 and state.reflection_sum == 90
+
+
+def test_run_totals_reset_with_origin() -> None:
+    state = RobotState()
+    feed(state, "S,0,7800,150,1", "T,0,0.0,0.0,0.0,50,0,F", "T,50,3.0,4.0,0.0,40,0,F")
+    state.reset_origin()
+    assert state.path_mm == 0.0 and state.reflection_n == 0

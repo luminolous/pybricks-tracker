@@ -7,8 +7,11 @@ pybricksdev API used, verified against the installed release:
 - discovery: bleak `BleakScanner.discover(return_adv=True)`, filtered on the
   Pybricks service UUID (`pybricksdev.ble.find_device` returns one hub only)
 - `PybricksHubBLE(device)`, `.connect()`, `.disconnect()`
-- `.run(path, wait=False, print_output=False, line_handler=False)`: compiles
-  with mpy-cross, downloads and starts without blocking
+- `pybricksdev.compile.compile_file` (mpy-cross only), then
+  `.download_user_program()` and `.start_user_program()`. Not `.run()`: its
+  multi-file compile finds imports by running `sys.executable -m mpy_tool`,
+  which breaks inside a PyInstaller exe. Hub programs import nothing local,
+  so the upload is one `__main__` module in the multi-file format.
 - `.stdout_observable`: raw stdout bytes, split into lines here
 - `.write_string()`: stdin
 - `.stop_user_program()`
@@ -28,6 +31,7 @@ from typing import Any, Protocol
 
 from bleak import BleakScanner
 from pybricksdev.ble.pybricks import PYBRICKS_SERVICE_UUID, StatusFlag
+from pybricksdev.compile import compile_file
 from pybricksdev.connections import ConnectionState
 from pybricksdev.connections.pybricks import PybricksHubBLE
 
@@ -40,6 +44,7 @@ SINGLE_CONNECTION_HINT = (
 DEFAULT_SCAN_TIMEOUT_S = 5.0
 STDIN_EOL = "\r\n"  # protocol.md: PC to hub lines end with \r\n
 HEARTBEAT_INTERVAL_S = 0.5  # protocol.md: HB every 500 ms, hub watchdog trips at 2 s
+MPY_ABI = 6  # Pybricks 3.2+ firmware
 
 
 class LinkState(Enum):
@@ -83,14 +88,22 @@ class HubLike(Protocol):
     def stdout_observable(self) -> Observable: ...
     async def connect(self) -> None: ...
     async def disconnect(self) -> None: ...
-    async def run(
-        self, py_path: str | None, wait: bool, print_output: bool, line_handler: bool
-    ) -> None: ...
+    async def download_user_program(self, program: bytes) -> None: ...
+    async def start_user_program(self) -> None: ...
     async def stop_user_program(self) -> None: ...
     async def write_string(self, value: str) -> None: ...
 
 
 HubFactory = Callable[[Any], HubLike]
+Compiler = Callable[[Path], Awaitable[bytes]]
+
+
+async def build_program(path: Path) -> bytes:
+    """Compile a hub program into the multi-file upload format with one module."""
+    mpy = await compile_file(str(path.parent), path.name, MPY_ABI)
+    return len(mpy).to_bytes(4, "little") + b"__main__\x00" + mpy
+
+
 Scanner = Callable[[float], Awaitable[list[DiscoveredHub]]]
 
 
@@ -154,11 +167,13 @@ class HubConnection:
         self,
         hub_factory: HubFactory = PybricksHubBLE,
         scanner: Scanner = discover_hubs,
+        compiler: Compiler = build_program,
         on_link_state: Callable[[LinkState], None] | None = None,
         on_program_running: Callable[[bool], None] | None = None,
     ) -> None:
         self._hub_factory = hub_factory
         self._scanner = scanner
+        self._compiler = compiler
         self._on_link_state = on_link_state
         self._on_program_running = on_program_running
         self._hub: HubLike | None = None
@@ -222,7 +237,12 @@ class HubConnection:
         client = self._require_hub()
         self._splitter.reset()
         try:
-            await client.run(str(path), wait=False, print_output=False, line_handler=False)
+            program = await self._compiler(path)
+        except Exception as exc:
+            raise HubConnectionError(f"Could not compile {path.name}: {exc}") from exc
+        try:
+            await client.download_user_program(program)
+            await client.start_user_program()
         except Exception as exc:
             raise HubConnectionError(f"Could not start {path.name} on the hub: {exc}") from exc
 

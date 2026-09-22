@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMenu,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -41,6 +42,8 @@ from app.core.config import (
     SensorCalibration,
 )
 from app.core.connection import HubConnection, HubConnectionError, LinkState, run_heartbeat
+from app.core.export import copy_session, session_to_csv
+from app.core.overlay import MAX_OVERLAYS, Overlay, load_overlay, next_color, session_label
 from app.core.protocol import (
     Detail,
     Event,
@@ -67,6 +70,7 @@ from app.ui.plot_panel import DT_WARN, PlotPanel
 from app.ui.port_panel import PortPanel
 from app.ui.replay_bar import BAR_HEIGHT_PX, ReplayBar, fmt_ms
 from app.ui.theme import caption, label, set_prop
+from app.ui.trail_colors import TRAIL_MODES
 from app.ui.tuning_panel import TuningPanel
 
 logger = logging.getLogger(__name__)
@@ -194,6 +198,8 @@ class MainWindow(QMainWindow):
         self._ready_event = asyncio.Event()
         self._shown_t: Telemetry | None = None
         self.recorder = SessionRecorder()
+        self._last_session: Path | None = None  # newest finished recording
+        self.overlays: list[Overlay] = []
         self._replay: Replay | None = None
         self._last_tick_s = clock()
         self._readout_timer = QTimer(self)
@@ -232,6 +238,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+D"), self, activated=self.show_drift_test)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.show_calibration)
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self._replay_clicked)
+        QShortcut(QKeySequence("Ctrl+E"), self, activated=self._export_clicked)
         QShortcut(QKeySequence("Esc"), self, activated=self._stop_clicked)
         app = QApplication.instance()
         if app is not None:
@@ -364,10 +371,9 @@ class MainWindow(QMainWindow):
         self.drift_button = _action_button("Drift test", "Ctrl+D")
         self.drift_button.clicked.connect(self.show_drift_test)
         box.addWidget(self.drift_button)
-        export = _action_button("Export run", "Ctrl+E")
-        export.setEnabled(False)
-        export.setToolTip("Arrives in M8")
-        box.addWidget(export)
+        self.export_button = _action_button("Export run", "Ctrl+E")
+        self.export_button.clicked.connect(self._export_clicked)
+        box.addWidget(self.export_button)
         self.code_button = _action_button("Hub program", "Ctrl+U")
         self.code_button.clicked.connect(self.show_code_preview)
         box.addWidget(self.code_button)
@@ -423,15 +429,17 @@ class MainWindow(QMainWindow):
         for button in (self.fit_button, self.follow_button, self.origin_button):
             tools_layout.addWidget(button)
         tools_layout.addSpacing(14)
-        for text, value, tip in (
-            ("Grid", "10cm", ""),
-            ("Trail", "plain", "More trail modes arrive in M8"),
-            ("Overlay", "0", "Run overlays arrive in M8"),
-        ):
-            t = label(f"{text}\n{value}", tone="dim")
-            t.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            t.setToolTip(tip)
-            tools_layout.addWidget(t)
+        grid_label = label("Grid\n10cm", tone="dim")
+        grid_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tools_layout.addWidget(grid_label)
+        tools_layout.addSpacing(10)
+        self.trail_button = _tool_button("Trail\nplain", "Trail colouring mode")
+        self.trail_button.clicked.connect(self._trail_menu)
+        self.overlay_button = _tool_button("Overlay\n0", "Compare with previous runs")
+        self.overlay_button.setCheckable(True)  # lit while overlays are shown
+        self.overlay_button.clicked.connect(self._overlay_menu)
+        tools_layout.addWidget(self.trail_button)
+        tools_layout.addWidget(self.overlay_button)
         tools_layout.addStretch()
 
         grid.addWidget(self.map, 0, 0)
@@ -675,6 +683,139 @@ class MainWindow(QMainWindow):
             f"edge {calibration.edge}"
         )
 
+    # -- trail modes, overlays, export ------------------------------------------
+
+    def set_trail_mode(self, mode: str) -> None:
+        self.map.set_trail_mode(mode)
+        self.trail_button.setText(f"Trail\n{mode}")
+
+    def add_overlay(self, path: Path) -> bool:
+        if len(self.overlays) >= MAX_OVERLAYS:
+            self.note(f"At most {MAX_OVERLAYS} overlays. Clear some first.")
+            return False
+        if any(o.path == path for o in self.overlays):
+            return False
+        try:
+            overlay = load_overlay(path, next_color(self.overlays))
+        except SessionError as exc:
+            self.note(str(exc))
+            return False
+        self.overlays.append(overlay)
+        self._overlays_changed()
+        self.note(f"overlay {path.name}: {overlay.label}")
+        return True
+
+    def clear_overlays(self) -> None:
+        self.overlays = []
+        self._overlays_changed()
+
+    def _overlays_changed(self) -> None:
+        self.map.set_overlays(self.overlays)
+        self.overlay_button.setText(f"Overlay\n{len(self.overlays)}")
+        self.overlay_button.setChecked(bool(self.overlays))
+
+    def _current_run_label(self) -> str:
+        if self._replay is not None:
+            return session_label(self._replay.session)
+        return f"now · KP {self.tuning.rows['KP'].value():.2f}"
+
+    def _popup(self, menu: QMenu, anchor: QWidget) -> None:
+        # popup(), not exec(): no nested event loop under qasync.
+        self._menu = menu
+        menu.popup(anchor.mapToGlobal(anchor.rect().topRight()))
+
+    def _trail_menu(self) -> None:
+        menu = QMenu(self)
+        for mode in TRAIL_MODES:
+            action = menu.addAction(mode)
+            action.setCheckable(True)
+            action.setChecked(mode == self.map.trail_mode)
+            action.triggered.connect(lambda _=False, m=mode: self.set_trail_mode(m))
+        self._popup(menu, self.trail_button)
+
+    def _overlay_menu(self) -> None:
+        self.overlay_button.setChecked(bool(self.overlays))  # clicking must not toggle it
+        menu = QMenu(self)
+        menu.addAction("Add previous run…").triggered.connect(self._add_overlay_clicked)
+        clear = menu.addAction("Clear overlays")
+        clear.setEnabled(bool(self.overlays))
+        clear.triggered.connect(self.clear_overlays)
+        self._popup(menu, self.overlay_button)
+
+    def _add_overlay_clicked(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Overlay previous runs", str(SESSIONS_DIR), "Session (*.jsonl)"
+        )
+        for path in paths:
+            self.add_overlay(Path(path))
+        if paths:
+            self.follow_button.setChecked(False)
+            self.map.fit(self.view_state)
+
+    def export_source(self) -> Path | None:
+        """The run CSV/JSONL export uses: the replayed session, else the last recording."""
+        if self._replay is not None:
+            return self._replay.session.path
+        return self._last_session
+
+    def export_png(self, path: Path) -> None:
+        self.map.render_png(path)
+        self.note(f"exported map {path}")
+
+    def export_csv(self, path: Path) -> bool:
+        source = self.export_source()
+        if source is None:
+            self.note("Record or replay a run before exporting telemetry.")
+            return False
+        try:
+            rows = session_to_csv(read_session(source), path)
+        except (SessionError, OSError) as exc:
+            self.note(f"CSV export failed: {exc}")
+            return False
+        self.note(f"exported {rows} rows to {path}")
+        return True
+
+    def export_jsonl(self, path: Path) -> bool:
+        source = self.export_source()
+        if source is None:
+            self.note("Record or replay a run before exporting the session.")
+            return False
+        try:
+            copy_session(source, path)
+        except OSError as exc:
+            self.note(f"Session export failed: {exc}")
+            return False
+        self.note(f"exported session to {path}")
+        return True
+
+    def _export_clicked(self) -> None:
+        menu = QMenu(self)
+        menu.addAction("Map as PNG…").triggered.connect(
+            lambda: self._ask_path("Export map", "map.png", "PNG image (*.png)", self.export_png)
+        )
+        has_source = self.export_source() is not None
+        stem = self.export_source().stem if has_source else "run"
+        csv = menu.addAction("Telemetry as CSV…")
+        csv.setEnabled(has_source)
+        csv.triggered.connect(
+            lambda: self._ask_path(
+                "Export telemetry", f"{stem}.csv", "CSV (*.csv)", self.export_csv
+            )
+        )
+        jsonl = menu.addAction("Session as JSONL…")
+        jsonl.setEnabled(has_source)
+        jsonl.triggered.connect(
+            lambda: self._ask_path(
+                "Export session", f"{stem}.jsonl", "Session (*.jsonl)", self.export_jsonl
+            )
+        )
+        self._popup(menu, self.export_button)
+
+    def _ask_path(self, title: str, name: str, pattern: str, action) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, title, str(Path.home() / name), pattern)
+        if path:
+            action(Path(path))
+
     # -- replay ---------------------------------------------------------------
 
     def open_replay(self, path: Path) -> bool:
@@ -785,6 +926,7 @@ class MainWindow(QMainWindow):
             return  # a new run started meanwhile and owns the recorder
         path = self.recorder.close()
         if path is not None:
+            self._last_session = path
             self.note(f"saved {path}")
 
     async def _finish_drift_test(self) -> None:
@@ -869,6 +1011,7 @@ class MainWindow(QMainWindow):
         calibration = self._base_config.calibration
         self.map.sensor_offset_mm = self.geometry_fields["sensor_offset_mm"].value()
         self.map.calibration = calibration
+        self.map.current_label = self._current_run_label()
         self.map.refresh(view)
         self.plots.calibration = calibration
         self.plots.refresh(view)

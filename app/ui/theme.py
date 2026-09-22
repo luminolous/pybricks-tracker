@@ -161,6 +161,13 @@ QTabBar::tab {{
 QTabBar::tab:selected {{ color: {TEXT}; border-bottom-color: {ACCENT}; }}
 QTabBar::tab:hover {{ color: {TEXT}; }}
 
+QMenu {{ background: {SURFACE}; border: 1px solid {LINE_STRONG}; padding: 4px 0; }}
+QMenu::item {{ padding: 5px 18px 5px 22px; }}
+QMenu::item:selected {{ background: {ACCENT_DIM}; }}
+QMenu::item:disabled {{ color: {DIM}; }}
+QMenu::indicator {{ width: 8px; height: 8px; left: 8px; }}
+QMenu::indicator:checked {{ background: {ACCENT}; }}
+
 QListWidget {{ background: {SUNKEN}; border: 1px solid {LINE}; outline: 0; }}
 QListWidget::item {{ padding: 6px 8px; border-bottom: 1px solid {LINE}; }}
 QListWidget::item:selected {{ background: {ACCENT_DIM}; color: {TEXT}; }}

@@ -124,7 +124,7 @@ async def test_run_file_does_not_wait_and_tracks_running(tmp_path: Path) -> None
     await h.conn.connect(HUB)
     program = tmp_path / "scan_ports.py"
     await h.conn.run_file(program)
-    assert h.hub.ran == [(str(program), False, False, False)]
+    assert h.hub.ran == [str(program)]
     assert h.conn.program_running
     await h.conn.stop()
     assert h.hub.stopped == 1
@@ -183,3 +183,25 @@ async def test_drop_reports_link_before_program_end() -> None:
     order.clear()
     h.hub.drop_link()
     assert order == ["disconnected", "running=False"]
+
+
+async def test_build_program_is_one_main_module(tmp_path: Path) -> None:
+    from app.codegen.generator import SCAN_PORTS_PROGRAM
+    from app.core.connection import build_program
+
+    program = await build_program(SCAN_PORTS_PROGRAM)
+    size = int.from_bytes(program[:4], "little")
+    assert program[4:13] == b"__main__\x00"
+    assert len(program) == 13 + size
+
+
+async def test_compile_failure_is_reported(tmp_path: Path) -> None:
+    h = Harness()
+
+    async def broken(path):
+        raise RuntimeError("mpy-cross: SyntaxError")
+
+    h.conn._compiler = broken
+    await h.conn.connect(HUB)
+    with pytest.raises(HubConnectionError, match="Could not compile"):
+        await h.conn.run_file(Path("x.py"))

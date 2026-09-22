@@ -23,7 +23,8 @@ class FakeHub:
         self.status_observable = BehaviorSubject(StatusFlag(0))
         self._stdout = Subject()
         self.written: list[str] = []
-        self.ran: list[tuple[str | None, bool, bool, bool]] = []
+        self.ran: list[str] = []  # program paths, in start order
+        self._downloaded = b""
         self.stopped = 0
         # Bytes the "program" prints when run() is called, in chunks.
         self.program_output: list[bytes] = []
@@ -43,8 +44,11 @@ class FakeHub:
         self.connection_state_observable.on_next(ConnectionState.DISCONNECTING)
         self.connection_state_observable.on_next(ConnectionState.DISCONNECTED)
 
-    async def run(self, py_path, wait, print_output, line_handler) -> None:
-        self.ran.append((py_path, wait, print_output, line_handler))
+    async def download_user_program(self, program: bytes) -> None:
+        self._downloaded = program
+
+    async def start_user_program(self) -> None:
+        self.ran.append(self._downloaded.removeprefix(b"PROGRAM:").decode())
         self.status_observable.on_next(StatusFlag.USER_PROGRAM_RUNNING)
         for chunk in self.program_output:
             self._stdout.on_next(chunk)
@@ -82,4 +86,11 @@ class FakeHubs:
         return self.hubs
 
     def connection(self, **callbacks: Callable) -> HubConnection:
-        return HubConnection(hub_factory=self.make_hub, scanner=self.scan, **callbacks)
+        return HubConnection(
+            hub_factory=self.make_hub, scanner=self.scan, compiler=fake_compile, **callbacks
+        )
+
+
+async def fake_compile(path) -> bytes:
+    """Skip mpy-cross in UI tests; FakeHub records the path it was given."""
+    return b"PROGRAM:" + str(path).encode()

@@ -162,9 +162,7 @@ async def test_run_uploads_program_and_waits_for_handshake(window) -> None:
     assert window.run_button.isEnabled()
     window.fakes.program_output[:] = [RUN_OUTPUT]
     assert await window.run_program()
-    path, wait, *_ = window.fakes.hub.ran[-1]
-    assert path.endswith("hub_line_follower.py")
-    assert wait is False
+    assert window.fakes.hub.ran[-1].endswith("hub_line_follower.py")
     assert window.mode_label.text() == "line_follower"
     assert not window.port_panel.isEnabled()  # config frozen while running
     window._refresh_readouts()

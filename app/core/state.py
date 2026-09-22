@@ -7,6 +7,7 @@ pose, trail, events and plot history.
 from __future__ import annotations
 
 import itertools
+import math
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -159,6 +160,11 @@ class Pose:
     x_mm: float
     y_mm: float
     heading_deg: float
+    # What the trail colouring modes need, captured per sample:
+    reflection: int = 0
+    steer: int = 0
+    speed_mm_s: float = 0.0  # from the distance to the previous sample (T has no speed)
+    hsv: tuple[int, int, int] | None = None  # latest D reading at this moment
 
 
 class RobotState:
@@ -179,6 +185,7 @@ class RobotState:
         self.reflection: int | None = None
         self.last_t: Telemetry | None = None
         self.events: list[EventRecord] = []
+        self._clear_run_totals()
         # (reflection, steer) from T at 20 Hz; (load_left, load_right, dt_ms) from D at 4 Hz
         self.fast = History()
         self.slow = History()
@@ -186,6 +193,13 @@ class RobotState:
 
     def _changed(self) -> None:
         self.version = next(_versions)
+
+    def _clear_run_totals(self) -> None:
+        # Running sums over the trail, so run metrics cost O(1) at 30 fps.
+        self.path_mm = 0.0
+        self.reflection_n = 0
+        self.reflection_sum = 0.0
+        self.reflection_sq_sum = 0.0
 
     def reset(self) -> None:
         """New run: forget the trail and the IMU state, keep the battery reading."""
@@ -198,11 +212,13 @@ class RobotState:
         self.events.clear()
         self.fast.clear()
         self.slow.clear()
+        self._clear_run_totals()
         self._changed()
 
     def reset_origin(self) -> None:
         """The hub moved its origin (ORG): the old trail is in another frame."""
         self.trail.clear()
+        self._clear_run_totals()
         self._changed()
 
     def apply(self, record: object) -> bool:
@@ -230,12 +246,34 @@ class RobotState:
             self._changed()
             return True
         if isinstance(record, Telemetry):
-            pose = Pose(record.t_ms, record.x_mm, record.y_mm, record.heading_deg)
+            previous = self.pose
+            step_mm = 0.0
+            speed = 0.0
+            if previous is not None:
+                step_mm = math.hypot(record.x_mm - previous.x_mm, record.y_mm - previous.y_mm)
+                dt_ms = record.t_ms - previous.t_ms
+                speed = step_mm / dt_ms * 1000 if dt_ms > 0 else previous.speed_mm_s
+            d = self.detail
+            pose = Pose(
+                record.t_ms,
+                record.x_mm,
+                record.y_mm,
+                record.heading_deg,
+                record.reflection,
+                record.steer,
+                speed,
+                (d.hue, d.saturation, d.value) if d else None,
+            )
             self.pose = pose
             self.reflection = record.reflection
             self.last_t = record
             self.fast.add(record.t_ms, record.reflection, record.steer)
             if self.imu_ready:
+                if self.trail:
+                    self.path_mm += step_mm
+                self.reflection_n += 1
+                self.reflection_sum += record.reflection
+                self.reflection_sq_sum += record.reflection**2
                 self.trail.append(pose)
                 if len(self.trail) > self.max_points:
                     del self.trail[: len(self.trail) - self.max_points]

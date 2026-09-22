@@ -115,6 +115,16 @@ def record_from_json(data: dict[str, Any]) -> Record | None:
     return None
 
 
+def _unused(directory: Path, stem: str) -> Path:
+    """`stem.jsonl`, or `stem-2.jsonl`, ... when runs start within the same second."""
+    path = directory / f"{stem}.jsonl"
+    n = 2
+    while path.exists():
+        path = directory / f"{stem}-{n}.jsonl"
+        n += 1
+    return path
+
+
 class SessionRecorder:
     def __init__(self, sessions_dir: Path | None = None) -> None:
         self._sessions_dir = sessions_dir
@@ -136,7 +146,7 @@ class SessionRecorder:
         # Resolved per start, not at import, so tests can point it elsewhere.
         directory = self._sessions_dir or SESSIONS_DIR
         directory.mkdir(parents=True, exist_ok=True)
-        self.path = directory / f"{stamp:%Y%m%d-%H%M%S}_{mode}.jsonl"
+        self.path = _unused(directory, f"{stamp:%Y%m%d-%H%M%S}_{mode}")
         self._file = self.path.open("w", encoding="utf-8", newline="\n")
         self._header = {
             "type": "header",

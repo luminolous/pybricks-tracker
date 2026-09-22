@@ -149,3 +149,17 @@ def test_state_events_keep_heading_and_skip_ack() -> None:
     assert obs.kind == "OBS" and obs.heading_deg == 10.0 and obs.detail == "48"
     assert "ACK" not in [e.kind for e in state.events]
     assert obs.describe() == "Obstacle at 48 mm"
+
+
+def test_runs_in_the_same_second_get_their_own_files(tmp_path) -> None:
+    stamp = datetime(2026, 9, 23, 10, 4, 11, tzinfo=UTC)
+    rec = SessionRecorder(tmp_path)
+    paths = []
+    for _ in range(3):
+        rec.start("line_follower", RobotConfig(), started_at=stamp)
+        paths.append(rec.close())
+    assert [p.name for p in paths] == [
+        "20260923-100411_line_follower.jsonl",
+        "20260923-100411_line_follower-2.jsonl",
+        "20260923-100411_line_follower-3.jsonl",
+    ]

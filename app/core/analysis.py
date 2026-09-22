@@ -20,6 +20,7 @@ import math
 from dataclasses import dataclass
 
 from app.core.config import RobotGeometry
+from app.core.state import RobotState
 
 SQUARE_CLOSURE_LIMIT_PCT = 5.0  # roadmap M4 acceptance
 TURNS_HEADING_LIMIT_DEG = 10.0  # roadmap M4 acceptance
@@ -160,3 +161,30 @@ def analyze_square(
         error_pct=pct,
         passed=pct <= SQUARE_CLOSURE_LIMIT_PCT,
     )
+
+
+# -- run metrics (overlay comparison, roadmap M8) ------------------------------
+
+
+@dataclass(frozen=True)
+class RunMetrics:
+    duration_s: float
+    path_mm: float
+    rms_error: float  # reflection around the calibrated edge
+    lost_count: int
+
+
+def run_metrics(state: RobotState, edge: int) -> RunMetrics:
+    """Metrics of the trail in `state`, from its running sums: O(1)."""
+    trail = state.trail
+    duration = (trail[-1].t_ms - trail[0].t_ms) / 1000 if len(trail) > 1 else 0.0
+    n = state.reflection_n
+    if n:
+        mean = state.reflection_sum / n
+        mean_sq = state.reflection_sq_sum / n
+        # mean((r - e)^2) = mean(r^2) - 2e*mean(r) + e^2
+        rms = math.sqrt(max(mean_sq - 2 * edge * mean + edge * edge, 0.0))
+    else:
+        rms = 0.0
+    lost = sum(1 for e in state.events if e.kind == "LOST")
+    return RunMetrics(duration, state.path_mm, rms, lost)

@@ -98,7 +98,7 @@ async def test_full_run_through_main_window(qapp, tmp_path, monkeypatch) -> None
             b"T,700,500.0,0.0,0.0,0,0,TEST\nT,9000,1003.0,1.0,0.2,0,0,STOP\n"
         ]
         assert await w.run_program("drift_test", drift="straight")
-        assert fakes.hub.ran[-1][0].endswith("hub_drift_test.py")
+        assert fakes.hub.ran[-1].endswith("hub_drift_test.py")
         await asyncio.sleep(0.05)
         w._tick_ui()
         assert w.battery_label.text() == "7.81 V"

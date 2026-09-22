@@ -1,5 +1,6 @@
-"""Map: heading tape, trail, robot marker, origin, event markers. Units are mm,
-labelled in cm.
+"""Map: heading tape, trail (four colouring modes), robot marker, origin, event
+markers, and previous runs overlaid with their metrics. Units are mm, labelled
+in cm.
 
 Frame (CLAUDE.md): x forward, y left, heading CCW from x, origin at run
 start. With y up on screen this is a normal plot: a left turn curves up.
@@ -14,13 +15,17 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPaintEvent, QPen, QPolygonF
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
 
+from app.core.analysis import RunMetrics, run_metrics
 from app.core.config import SensorCalibration
+from app.core.overlay import Overlay
 from app.core.state import EventRecord, RobotState
 from app.ui import theme
 from app.ui.color_swatch import ColorSwatch
 from app.ui.event_list import event_color
+from app.ui.theme import label
+from app.ui.trail_colors import segment_masks, trail_bins
 
 GRID_MINOR_MM = 100  # 10 cm grid (ui-spec)
 GRID_MAJOR_MM = 500
@@ -33,6 +38,7 @@ MARKER_HALF_WIDTH_MM = 45
 TAPE_PX_PER_DEG = 3.2
 TAPE_LABEL_CLEARANCE_PX = 40
 SWATCH_MARGIN_PX = 12
+LEGEND_MARGIN_PX = 12
 EVENT_SYMBOLS = {
     "LOST": "t",
     "GIVEUP": "t",
@@ -126,6 +132,15 @@ class CmAxis(pg.AxisItem):
         return [f"{v / 10:g}" for v in values]
 
 
+SCALE_BAR_STEPS_MM = (10, 20, 50, 100, 200, 500, 1000, 2000, 5000)
+SCALE_BAR_TARGET_PX = 110
+
+
+def scale_bar_length(mm_per_px: float) -> int:
+    """The round length whose bar comes closest to SCALE_BAR_TARGET_PX."""
+    return min(SCALE_BAR_STEPS_MM, key=lambda mm: abs(mm / mm_per_px - SCALE_BAR_TARGET_PX))
+
+
 def marker_polygon(x_mm: float, y_mm: float, heading_deg: float) -> tuple[np.ndarray, np.ndarray]:
     """Closed triangle outline pointing along `heading_deg` (CCW from +x)."""
     h = math.radians(heading_deg)
@@ -141,6 +156,80 @@ def marker_polygon(x_mm: float, y_mm: float, heading_deg: float) -> tuple[np.nda
     return xs, ys
 
 
+class MapLegend(QFrame):
+    """Bottom-left panel: the trail mode's key and, with overlays, run metrics."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("mapLegend")
+        self.setStyleSheet(
+            f"QFrame#mapLegend {{ background: {theme.SURFACE};"
+            f" border: 1px solid {theme.LINE_STRONG}; }}"
+        )
+        self.mode_line = label("", tone="muted")
+        self.mode_line.setStyleSheet("font-size: 11px;")
+        self.table = QGridLayout()
+        self.table.setHorizontalSpacing(14)
+        self.table.setVerticalSpacing(3)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 7)
+        layout.setSpacing(6)
+        layout.addWidget(self.mode_line)
+        layout.addLayout(self.table)
+        self._structure: tuple = ()
+        self._cells: list[list[QLabel]] = []
+
+    def set_content(self, mode_text: str | None, rows: list[tuple[str, str, RunMetrics]]) -> None:
+        self.mode_line.setText(mode_text or "")
+        self.mode_line.setVisible(bool(mode_text))
+        # Rebuild only when the set of runs changes; live metrics just update text.
+        structure = tuple((color, text) for color, text, _ in rows)
+        if structure != self._structure:
+            self._structure = structure
+            self._build(rows)
+        for cells, (_, _, m) in zip(self._cells, rows, strict=True):
+            for cell, value in zip(cells, _metric_texts(m), strict=True):
+                if cell.text() != value:
+                    cell.setText(value)
+        self.setVisible(bool(mode_text) or bool(rows))
+        self.adjustSize()
+
+    def _build(self, rows: list[tuple[str, str, RunMetrics]]) -> None:
+        while self.table.count():
+            item = self.table.takeAt(0)
+            if item.widget():
+                item.widget().hide()
+                item.widget().setParent(None)
+                item.widget().deleteLater()
+        self._cells = []
+        if not rows:
+            return
+        for col, head in enumerate(("Run", "Time", "Path", "RMS err", "Lost")):
+            h = label(head, tone="dim")
+            h.setStyleSheet("font-size: 10px;")
+            self.table.addWidget(h, 0, col)
+        for r, (color, text, _) in enumerate(rows, start=1):
+            name = QLabel(f"<span style='color:{color}'>━</span>&nbsp; {text}")
+            name.setStyleSheet("font-size: 11px;")
+            self.table.addWidget(name, r, 0)
+            cells = []
+            for col in range(1, 5):
+                cell = label("", mono=True)
+                cell.setStyleSheet("font-size: 11px;")
+                self.table.addWidget(cell, r, col)
+                cells.append(cell)
+            self._cells.append(cells)
+
+
+def _metric_texts(m: RunMetrics) -> tuple[str, str, str, str]:
+    return (
+        f"{int(m.duration_s // 60):02d}:{int(m.duration_s % 60):02d}",
+        f"{m.path_mm / 1000:.2f} m",
+        f"{m.rms_error:.1f}",
+        str(m.lost_count),
+    )
+
+
 class MapView(QWidget):
     """Emits `follow_changed` when a manual pan or zoom turns following off."""
 
@@ -152,6 +241,9 @@ class MapView(QWidget):
         self.follow = True
         self.sensor_offset_mm = 40.0
         self.calibration = SensorCalibration()
+        self.trail_mode = "plain"
+        self.current_label = "now"
+        self.overlays: list[Overlay] = []
         self._drawn_version = -1
 
         self.tape = HeadingTape()
@@ -193,6 +285,8 @@ class MapView(QWidget):
             self.plot.addItem(graphic)
         self._shown_events: list[EventRecord] = []
         self.selected: EventRecord | None = None
+        self.trail_bins: list[pg.PlotDataItem] = []  # coloured modes, one curve per bin
+        self.overlay_curves: list[pg.PlotDataItem] = []
         self._set_default_range()
         self.plot.getViewBox().sigRangeChangedManually.connect(self._manual_range)
 
@@ -205,10 +299,41 @@ class MapView(QWidget):
         # Overlay on the plot, pinned top-right; hidden until the sensor reports.
         self.swatch = ColorSwatch(self.plot)
         self.swatch.hide()
+        self.legend = MapLegend(self.plot)
+        self.legend.hide()
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._place_swatch()
+        self._place_legend()
+
+    def _place_legend(self) -> None:
+        self.legend.adjustSize()
+        bottom_axis = self.plot.getPlotItem().getAxis("bottom").height()
+        self.legend.move(
+            self.plot.getPlotItem().getAxis("left").width() + LEGEND_MARGIN_PX,
+            self.plot.height() - bottom_axis - self.legend.height() - LEGEND_MARGIN_PX,
+        )
+
+    def set_trail_mode(self, mode: str) -> None:
+        self.trail_mode = mode
+        self._drawn_version = -1
+
+    def set_overlays(self, overlays: list[Overlay]) -> None:
+        self.overlays = list(overlays)
+        for curve in self.overlay_curves:
+            self.plot.removeItem(curve)
+        self.overlay_curves = []
+        for overlay in self.overlays:
+            curve = pg.PlotDataItem(
+                [p.x_mm for p in overlay.trail],
+                [p.y_mm for p in overlay.trail],
+                pen=pg.mkPen(overlay.color, width=1.4),
+            )
+            curve.setZValue(-1)  # under the live trail
+            self.plot.addItem(curve)
+            self.overlay_curves.append(curve)
+        self._drawn_version = -1
 
     def _place_swatch(self) -> None:
         self.swatch.adjustSize()
@@ -227,12 +352,15 @@ class MapView(QWidget):
                 self._place_swatch()
                 self.swatch.show()
         self._draw_events(state.events)
-        if state.trail:
-            xs = np.fromiter((p.x_mm for p in state.trail), float, len(state.trail))
-            ys = np.fromiter((p.y_mm for p in state.trail), float, len(state.trail))
-            self.trail.setData(xs, ys)
-        else:
-            self.trail.setData([], [])
+        mode_text = self._draw_trail(state)
+        rows = []
+        if self.overlays:
+            rows.append(
+                (theme.TRAIL, self.current_label, run_metrics(state, self.calibration.edge))
+            )
+            rows += [(o.color, o.label, o.metrics) for o in self.overlays]
+        self.legend.set_content(mode_text, rows)
+        self._place_legend()
         pose = state.pose if state.imu_ready else None
         if pose is None:
             self.robot.setData([], [])
@@ -249,8 +377,59 @@ class MapView(QWidget):
         if self.follow:
             self._center_on(pose.x_mm, pose.y_mm)
 
+    def _draw_trail(self, state: RobotState) -> str | None:
+        trail = state.trail
+        n = len(trail)
+        xs = np.fromiter((p.x_mm for p in trail), float, n)
+        ys = np.fromiter((p.y_mm for p in trail), float, n)
+        if self.trail_mode == "plain" or n < 2:
+            self.trail.setData(xs, ys)
+            for curve in self.trail_bins:
+                curve.setData([], [])
+            _, _, text = trail_bins(trail, self.trail_mode)
+            return text
+        self.trail.setData([], [])
+        bins, palette, text = trail_bins(trail, self.trail_mode)
+        while len(self.trail_bins) < len(palette):
+            curve = pg.PlotDataItem()
+            self.plot.addItem(curve)
+            self.trail_bins.append(curve)
+        masks = segment_masks(bins, len(palette))
+        for i, curve in enumerate(self.trail_bins):
+            if i < len(palette) and masks[i].any():
+                curve.setPen(pg.mkPen(palette[i], width=2))
+                curve.setData(xs, ys, connect=masks[i])
+            else:
+                curve.setData([], [])
+        return text
+
+    def render_png(self, path) -> None:
+        """Save the current view with a scale bar (ui-spec, Export)."""
+        pixmap = self.plot.grab()
+        vb = self.plot.getViewBox()
+        area = self.plot.mapFromScene(vb.sceneBoundingRect()).boundingRect()
+        mm_per_px = vb.viewPixelSize()[0]
+        length_mm = scale_bar_length(mm_per_px)
+        length_px = length_mm / mm_per_px
+        # bottom-right: the legend owns the bottom-left corner
+        x0 = area.right() - 16 - length_px
+        y0 = area.bottom() - 18
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor(theme.TEXT), 2))
+        painter.drawLine(QPointF(x0, y0), QPointF(x0 + length_px, y0))
+        for x in (x0, x0 + length_px):
+            painter.drawLine(QPointF(x, y0 - 5), QPointF(x, y0 + 1))
+        painter.setFont(_mono(11))
+        text = f"{length_mm / 10:g} cm" if length_mm < 1000 else f"{length_mm / 1000:g} m"
+        painter.drawText(QPointF(x0, y0 - 8), text)
+        painter.end()
+        pixmap.save(str(path), "PNG")
+
     def fit(self, state: RobotState) -> None:
         points = [(p.x_mm, p.y_mm) for p in state.trail] + [(0.0, 0.0)]
+        for overlay in self.overlays:
+            points += [(p.x_mm, p.y_mm) for p in overlay.trail]
         xs, ys = zip(*points, strict=True)
         half = max(max(xs) - min(xs), max(ys) - min(ys), 2 * DEFAULT_HALF_SPAN_MM) / 2
         half *= 1 + FIT_PADDING
