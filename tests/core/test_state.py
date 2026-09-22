@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.core.protocol import DeviceKind, Ready, decode_line
-from app.core.state import PortScan, Pose, RobotState, TelemetryWatch
+from app.core.state import History, PortScan, Pose, RobotState, TelemetryWatch
 
 SCAN_OUTPUT = ["R,SCAN,1", "P,A,0", "P,B,0", "P,C,48", "P,D,61", "P,E,62", "P,F,48", "P,DONE,0"]
 
@@ -118,3 +118,31 @@ def test_trail_is_capped() -> None:
     for i in range(5):
         feed(state, f"T,{i},{i}.0,0.0,0.0,50,0,FOLLOW")
     assert [p.x_mm for p in state.trail] == [2.0, 3.0, 4.0]
+
+
+# -- History and D lines --------------------------------------------------------
+
+
+def test_history_keeps_ten_seconds() -> None:
+    h = History()
+    for t in range(0, 12_001, 1000):
+        h.add(t, float(t))
+    assert list(h.t_ms)[0] == 2000
+    assert h.column(0)[-1] == 12000.0
+
+
+def test_history_clears_when_hub_clock_restarts() -> None:
+    h = History()
+    h.add(5000, 1.0)
+    h.add(100, 2.0)
+    assert list(h.t_ms) == [100]
+
+
+def test_detail_feeds_slow_history_and_reset_clears() -> None:
+    state = RobotState()
+    feed(state, "D,250,210,4,91,62,58,11", "T,300,0.0,0.0,0.0,47,-12,FOLLOW")
+    assert state.detail.dt_ms == 11
+    assert state.slow.column(2) == [11]
+    assert state.fast.column(0) == [47] and state.reflection == 47
+    state.reset()
+    assert state.detail is None and not state.slow.t_ms and not state.fast.t_ms

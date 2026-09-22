@@ -6,10 +6,12 @@ with M4.
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 
 from app.core.protocol import (
     PORT_LETTERS,
+    Detail,
     DeviceType,
     PortInfo,
     PortScanDone,
@@ -84,6 +86,32 @@ class TelemetryWatch:
 
 
 MAX_TRAIL_POINTS = 36_000  # 30 minutes of T at 20 Hz
+HISTORY_S = 10.0  # plots show the last 10 seconds (ui-spec)
+
+
+class History:
+    """Samples of one stream over the last HISTORY_S seconds, by hub time."""
+
+    def __init__(self, window_s: float = HISTORY_S) -> None:
+        self.window_ms = window_s * 1000
+        self.t_ms: deque[int] = deque()
+        self.values: deque[tuple[float, ...]] = deque()
+
+    def add(self, t_ms: int, *values: float) -> None:
+        if self.t_ms and t_ms < self.t_ms[-1]:
+            self.clear()  # hub clock restarted: a new program
+        self.t_ms.append(t_ms)
+        self.values.append(values)
+        while self.t_ms and self.t_ms[0] < t_ms - self.window_ms:
+            self.t_ms.popleft()
+            self.values.popleft()
+
+    def clear(self) -> None:
+        self.t_ms.clear()
+        self.values.clear()
+
+    def column(self, index: int) -> list[float]:
+        return [v[index] for v in self.values]
 
 
 @dataclass(frozen=True)
@@ -108,6 +136,11 @@ class RobotState:
         self.pose: Pose | None = None
         self.imu_ready = False
         self.battery_mv: int | None = None
+        self.detail: Detail | None = None
+        self.reflection: int | None = None
+        # (reflection, steer) from T at 20 Hz; (load_left, load_right, dt_ms) from D at 4 Hz
+        self.fast = History()
+        self.slow = History()
         self.version = 0
 
     def reset(self) -> None:
@@ -115,6 +148,10 @@ class RobotState:
         self.trail.clear()
         self.pose = None
         self.imu_ready = False
+        self.detail = None
+        self.reflection = None
+        self.fast.clear()
+        self.slow.clear()
         self.version += 1
 
     def reset_origin(self) -> None:
@@ -129,9 +166,16 @@ class RobotState:
             self.battery_mv = record.battery_mv
             self.version += 1
             return True
+        if isinstance(record, Detail):
+            self.detail = record
+            self.slow.add(record.t_ms, record.load_left, record.load_right, record.dt_ms)
+            self.version += 1
+            return True
         if isinstance(record, Telemetry):
             pose = Pose(record.t_ms, record.x_mm, record.y_mm, record.heading_deg)
             self.pose = pose
+            self.reflection = record.reflection
+            self.fast.add(record.t_ms, record.reflection, record.steer)
             if self.imu_ready:
                 self.trail.append(pose)
                 if len(self.trail) > self.max_points:

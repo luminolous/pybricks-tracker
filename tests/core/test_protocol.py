@@ -6,6 +6,7 @@ import pytest
 
 from app.core.protocol import (
     PROTO_VERSION,
+    Detail,
     DeviceKind,
     Event,
     PortInfo,
@@ -140,4 +141,17 @@ def test_decode_status() -> None:
 
 @pytest.mark.parametrize("line", ["S,1000,7820,142", "S,1000,7820,142,2", "S,x,7820,142,1"])
 def test_malformed_status_returns_none(line: str) -> None:
+    assert decode_line(line) is None
+
+
+def test_decode_detail() -> None:
+    assert decode_line("D,1500,210,4,91,62,58,11") == Detail(1500, 210, 4, 91, 62, 58, 11)
+    assert decode_line("D,1500,210,4,91,-5,58,11").load_left == -5  # load sign unverified
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["D,1500,210,4,91,62,58", "D,1500,400,4,91,62,58,11", "D,1500,210,4,91,62,58,-1", "D,x"],
+)
+def test_malformed_detail_returns_none(line: str) -> None:
     assert decode_line(line) is None

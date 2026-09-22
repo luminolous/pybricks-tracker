@@ -23,6 +23,7 @@ BUILD_DIR = Path(__file__).resolve().parents[2] / "build"
 LOOP_MS = 10
 WATCHDOG_MS = 2000  # protocol.md: stop after 2 s without any command
 T_EVERY_LOOPS = 5  # 10 ms loop -> T at 20 Hz
+D_EVERY_LOOPS = 25  # D at 4 Hz
 S_EVERY_LOOPS = 100  # S at 1 Hz
 DISTANCE_EVERY_LOOPS = 10  # ultrasonic at 10 Hz (hub-programs.md)
 
@@ -95,6 +96,7 @@ def render(config: RobotConfig, mode: str, drift: str | None = None) -> str:
         "watchdog_ms": WATCHDOG_MS,
         "t_every": T_EVERY_LOOPS,
         "s_every": S_EVERY_LOOPS,
+        "d_every": D_EVERY_LOOPS,
         "use_gyro": drift_test.use_gyro if drift_test else True,
         "drift": drift_test,
         "distance_every": DISTANCE_EVERY_LOOPS,

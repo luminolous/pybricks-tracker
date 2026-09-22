@@ -15,8 +15,10 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPaintEvent, QPen, QPolygonF
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from app.core.config import SensorCalibration
 from app.core.state import RobotState
 from app.ui import theme
+from app.ui.color_swatch import ColorSwatch
 
 GRID_MINOR_MM = 100  # 10 cm grid (ui-spec)
 GRID_MAJOR_MM = 500
@@ -28,6 +30,7 @@ MARKER_TAIL_MM = -45
 MARKER_HALF_WIDTH_MM = 45
 TAPE_PX_PER_DEG = 3.2
 TAPE_LABEL_CLEARANCE_PX = 40
+SWATCH_MARGIN_PX = 12
 WAITING_TEXT = "heading appears once the IMU is ready"
 
 
@@ -119,6 +122,7 @@ class MapView(QWidget):
         super().__init__()
         self.follow = True
         self.sensor_offset_mm = 40.0
+        self.calibration = SensorCalibration()
         self._drawn_version = -1
 
         self.tape = HeadingTape()
@@ -155,11 +159,30 @@ class MapView(QWidget):
         layout.addWidget(self.tape)
         layout.addWidget(self.plot, 1)
 
+        # Overlay on the plot, pinned top-right; hidden until the sensor reports.
+        self.swatch = ColorSwatch(self.plot)
+        self.swatch.hide()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._place_swatch()
+
+    def _place_swatch(self) -> None:
+        self.swatch.adjustSize()
+        self.swatch.move(
+            self.plot.width() - self.swatch.width() - SWATCH_MARGIN_PX, SWATCH_MARGIN_PX
+        )
+
     def refresh(self, state: RobotState) -> None:
         """Redraw from `state` if it changed since the last call."""
         if state.version == self._drawn_version:
             return
         self._drawn_version = state.version
+        if state.reflection is not None or state.detail is not None:
+            self.swatch.show_reading(state.reflection, state.detail, self.calibration)
+            if self.swatch.isHidden():
+                self._place_swatch()
+                self.swatch.show()
         if state.trail:
             xs = np.fromiter((p.x_mm for p in state.trail), float, len(state.trail))
             ys = np.fromiter((p.y_mm for p in state.trail), float, len(state.trail))
@@ -196,6 +219,7 @@ class MapView(QWidget):
 
     def clear(self) -> None:
         self._drawn_version = -1
+        self.swatch.hide()
         self._set_default_range()
 
     def _set_default_range(self) -> None:

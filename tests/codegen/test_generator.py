@@ -179,3 +179,22 @@ def test_drift_test_needs_no_line_sensor() -> None:
 def test_unknown_drift_test_raises() -> None:
     with pytest.raises(GeneratorError, match="Unknown drift test"):
         render(DEFAULT, "drift_test", drift="figure8")
+
+
+def test_detail_line_is_throttled_to_4_hz(source: str) -> None:
+    assert "D_EVERY = 25" in source and "LOOP_MS = 10" in source
+    loop = function(source, "run_loop")
+    assert "if n % D_EVERY == 0:" in loop
+    assert "emit_d(dt_ms)" in loop
+    # the expensive reads live only in emit_d, never in the loop body
+    assert source.count("line_sensor.hsv()") == 1
+    assert "line_sensor.hsv()" in function(source, "emit_d")
+    assert "left_motor.load()" in function(source, "emit_d")
+
+
+def test_loop_dt_is_the_full_period(source: str) -> None:
+    loop = function(source, "run_loop")
+    body = loop[loop.index("while True:") :]
+    # read before reset, at the top of the iteration: includes the previous wait
+    assert body.index("dt_ms = period.time()") < body.index("period.reset()")
+    assert body.index("period.reset()") < body.index("check_commands()")

@@ -20,6 +20,7 @@ LOOP_MS = {{ loop_ms }}
 WATCHDOG_MS = {{ watchdog_ms }}
 T_EVERY = {{ t_every }}
 S_EVERY = {{ s_every }}
+D_EVERY = {{ d_every }}
 IMU_WAIT_S_MS = 500
 DISTANCE_EVERY = {{ distance_every }}
 
@@ -123,6 +124,22 @@ def emit_t(refl):
     print(
         "T,{},{:.1f},{:.1f},{:.1f},{},{},{}".format(
             clock.time(), _x, _y, _heading_deg, refl, int(STEER), STATE
+        )
+    )
+
+
+def emit_d(dt_ms):
+    # Slow detail at 4 Hz: hsv() and load() are the expensive reads, so they
+    # happen only here (hub-programs.md, loop time budget).
+{% if line %}
+    c = line_sensor.hsv()
+    h, s, v = c.h, c.s, c.v
+{% else %}
+    h, s, v = 0, 0, 0
+{% endif %}
+    print(
+        "D,{},{},{},{},{},{},{}".format(
+            clock.time(), h, s, v, left_motor.load(), right_motor.load(), dt_ms
         )
     )
 
@@ -234,9 +251,13 @@ def main():
 def run_loop():
     global STATE, STEER
     loop_timer = StopWatch()
+    period = StopWatch()  # full iteration including the wait: the real loop dt
+    dt_ms = LOOP_MS
     refl = read_reflection()
     n = 0
     while True:
+        dt_ms = period.time()
+        period.reset()
         loop_timer.reset()
         check_commands()
         if STOPPED:
@@ -256,6 +277,8 @@ def run_loop():
         n += 1
         if n % T_EVERY == 0:
             emit_t(refl)
+        if n % D_EVERY == 0:
+            emit_d(dt_ms)
         if n % S_EVERY == 0:
             emit_s()
         spare = LOOP_MS - loop_timer.time()

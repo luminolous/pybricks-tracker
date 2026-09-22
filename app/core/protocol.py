@@ -3,7 +3,7 @@
 Authoritative spec: .claude/docs/protocol.md. This module and the hub
 templates both implement it; change the spec first.
 
-Decodes `P`, `R`, `T`, `E` and `S`. `D` arrives with M5. Anything
+Decodes every hub-to-PC line: `P`, `R`, `T`, `D`, `E` and `S`. Anything
 unrecognised decodes to None and belongs in the console, never in an
 exception.
 """
@@ -106,6 +106,19 @@ class Telemetry:
 
 
 @dataclass(frozen=True)
+class Detail:
+    """`D,<t_ms>,<h>,<s>,<v>,<load_left>,<load_right>,<dt_ms>`"""
+
+    t_ms: int
+    hue: int
+    saturation: int
+    value: int
+    load_left: int
+    load_right: int
+    dt_ms: int
+
+
+@dataclass(frozen=True)
 class Status:
     """`S,<t_ms>,<battery_mv>,<battery_ma>,<imu_ready>`"""
 
@@ -129,7 +142,7 @@ class Event:
     detail: str | None = None
 
 
-Record = PortInfo | PortScanDone | Ready | Telemetry | Event | Status
+Record = PortInfo | PortScanDone | Ready | Telemetry | Detail | Event | Status
 
 
 def decode_line(line: str) -> Record | None:
@@ -149,6 +162,8 @@ def decode_line(line: str) -> Record | None:
             return _decode_event(fields)
         if prefix == "S":
             return _decode_status(fields)
+        if prefix == "D":
+            return _decode_detail(fields)
     except (IndexError, ValueError):
         return None
     return None
@@ -167,6 +182,15 @@ def _decode_telemetry(fields: list[str]) -> Telemetry | None:
         steer=int(fields[5]),
         state=state,
     )
+
+
+def _decode_detail(fields: list[str]) -> Detail | None:
+    if len(fields) < 7:
+        return None
+    detail = Detail(*(int(f) for f in fields[:7]))
+    if not (0 <= detail.hue < 360 and 0 <= detail.saturation <= 100 and 0 <= detail.value <= 100):
+        return None
+    return detail if detail.dt_ms >= 0 else None
 
 
 def _decode_status(fields: list[str]) -> Status | None:

@@ -1,8 +1,8 @@
 """Main application window, laid out after docs/design/main-window-mockup.html.
 
 Wires connect, port scan, run with handshake and heartbeat, presets, code
-preview, readouts and E-STOP. Map, plots and events are placeholders filled by
-later milestones.
+preview, map, plots, readouts, drift test and E-STOP. Events and live tuning
+arrive in later milestones.
 """
 
 from __future__ import annotations
@@ -28,15 +28,22 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QPushButton,
-    QTabBar,
     QVBoxLayout,
     QWidget,
 )
 
-from app.codegen.generator import SCAN_PORTS_PROGRAM, GeneratorError, generate
+from app.codegen.generator import LOOP_MS, SCAN_PORTS_PROGRAM, GeneratorError, generate
 from app.core.config import CONFIGS_DIR, ConfigError, RobotConfig, RobotGeometry
 from app.core.connection import HubConnection, HubConnectionError, LinkState, run_heartbeat
-from app.core.protocol import Event, Ready, Status, Telemetry, decode_line, encode_command
+from app.core.protocol import (
+    Detail,
+    Event,
+    Ready,
+    Status,
+    Telemetry,
+    decode_line,
+    encode_command,
+)
 from app.core.state import PortScan, RobotState, TelemetryWatch
 from app.ui.code_preview import CodePreview
 from app.ui.console_pane import ConsolePane
@@ -44,6 +51,7 @@ from app.ui.dialogs.connect import ConnectDialog
 from app.ui.dialogs.drift_test import DriftTestDialog
 from app.ui.link_banner import LinkBanner
 from app.ui.map_view import MapView
+from app.ui.plot_panel import DT_WARN, PlotPanel
 from app.ui.port_panel import PortPanel
 from app.ui.theme import caption, label, set_prop
 
@@ -85,6 +93,15 @@ def _spin(low: float, high: float, decimals: int, suffix: str = "") -> QDoubleSp
     spin.setSuffix(suffix)
     spin.setAlignment(Qt.AlignmentFlag.AlignRight)
     return spin
+
+
+def loop_dt_tone(dt_ms: float, nominal_ms: float) -> str:
+    """Header colour for the measured loop time: amber above 1.5x, red above 2x (ui-spec)."""
+    if dt_ms > 2 * nominal_ms:
+        return "danger"
+    if dt_ms > DT_WARN * nominal_ms:
+        return "warn"
+    return "text"
 
 
 def _tool_button(text: str, tip: str) -> QPushButton:
@@ -394,23 +411,12 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        tabs_wrap = _frame("section")
-        tabs_layout = QVBoxLayout(tabs_wrap)
-        tabs_layout.setContentsMargins(8, 0, 16, 14)
-        self.plot_tabs = QTabBar()
-        self.plot_tabs.setDrawBase(False)
-        for name in ("Reflection", "Error / steer", "Motor load", "Loop dt"):
-            self.plot_tabs.addTab(name)
-        plot_area = _frame("plotArea")
-        plot_area.setFixedHeight(150)
-        plot_hint = QVBoxLayout(plot_area)
-        p = label("Plots arrive in M5", tone="dim")
-        p.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        plot_hint.addWidget(p)
-        tabs_layout.addWidget(self.plot_tabs)
-        tabs_layout.addSpacing(8)
-        tabs_layout.addWidget(plot_area)
-        layout.addWidget(tabs_wrap)
+        plots = _frame("section")
+        plots_layout = QVBoxLayout(plots)
+        plots_layout.setContentsMargins(0, 0, 0, 0)
+        self.plots = PlotPanel(nominal_dt_ms=LOOP_MS)
+        plots_layout.addWidget(self.plots)
+        layout.addWidget(plots)
 
         tuning = _frame("section")
         t_layout = QGridLayout(tuning)
@@ -651,7 +657,7 @@ class MainWindow(QMainWindow):
             self._handle_record(decode_line(line))
 
     def _handle_record(self, record: object) -> None:
-        if isinstance(record, Status):
+        if isinstance(record, Status | Detail):
             self.state.apply(record)
         elif isinstance(record, Telemetry):
             self.state.apply(record)
@@ -683,10 +689,15 @@ class MainWindow(QMainWindow):
 
     def _tick_ui(self) -> None:
         self._refresh_readouts()
+        calibration = self._base_config.calibration
         self.map.sensor_offset_mm = self.geometry_fields["sensor_offset_mm"].value()
+        self.map.calibration = calibration
         self.map.refresh(self.state)
+        self.plots.calibration = calibration
+        self.plots.refresh(self.state)
         if self.state.battery_mv is not None:
             self.battery_label.setText(f"{self.state.battery_mv / 1000:.2f} V")
+        self._show_loop_dt()
         self._check_link()
 
     def _check_link(self) -> None:
@@ -719,6 +730,16 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self.banner.place()
+
+    def _show_loop_dt(self) -> None:
+        detail = self.state.detail
+        if detail is None:
+            return
+        dt = detail.dt_ms
+        self.loop_label.setText(f"{dt} ms")
+        tone = loop_dt_tone(dt, LOOP_MS)
+        if self.loop_label.property("tone") != tone:
+            set_prop(self.loop_label, "tone", tone)
 
     def _refresh_readouts(self) -> None:
         t = self._latest_t
