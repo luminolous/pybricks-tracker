@@ -13,3 +13,11 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 @pytest.fixture(scope="session")
 def qapp() -> QApplication:
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(autouse=True)
+def isolated_sessions(tmp_path, monkeypatch):
+    """Recordings made by tests go to a temp dir, never the real sessions/."""
+    target = tmp_path / "sessions"
+    monkeypatch.setattr("app.core.recorder.SESSIONS_DIR", target)
+    return target

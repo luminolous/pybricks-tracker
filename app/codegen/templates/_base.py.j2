@@ -22,6 +22,8 @@ T_EVERY = {{ t_every }}
 S_EVERY = {{ s_every }}
 D_EVERY = {{ d_every }}
 IMU_WAIT_S_MS = 500
+BUMP_MM_S2 = 15000  # horizontal acceleration spike, ~1.5 g: likely a collision
+BUMP_COOLDOWN_MS = 500
 DISTANCE_EVERY = {{ distance_every }}
 
 # -- devices: only what the config assigns (an empty port raises OSError) --
@@ -162,6 +164,34 @@ def emit_e(kind, detail=None):
         print("E,{},{},{:.1f},{:.1f},{}".format(kind, clock.time(), _x, _y, detail))
 
 
+# -- events detected on the hub --
+
+_stalled_left = False
+_stalled_right = False
+_bump_timer = StopWatch()
+
+
+def check_stall():
+    # One STALL per onset, not one per loop while it lasts.
+    global _stalled_left, _stalled_right
+    left = left_motor.stalled()
+    right = right_motor.stalled()
+    if left and not _stalled_left:
+        emit_e("STALL", "L")
+    if right and not _stalled_right:
+        emit_e("STALL", "R")
+    _stalled_left = left
+    _stalled_right = right
+
+
+def check_bump():
+    a = hub.imu.acceleration()
+    peak = int(math.sqrt(a[0] * a[0] + a[1] * a[1]))  # horizontal only: gravity is z
+    if peak > BUMP_MM_S2 and _bump_timer.time() > BUMP_COOLDOWN_MS:
+        emit_e("BUMP", peak)
+        _bump_timer.reset()
+
+
 # -- commands: non-blocking stdin poll, never wait inside the loop --
 
 
@@ -281,8 +311,10 @@ def run_loop():
         n += 1
         if n % T_EVERY == 0:
             emit_t(refl)
+            check_bump()
         if n % D_EVERY == 0:
             emit_d(dt_ms)
+            check_stall()
         if n % S_EVERY == 0:
             emit_s()
         spare = LOOP_MS - loop_timer.time()

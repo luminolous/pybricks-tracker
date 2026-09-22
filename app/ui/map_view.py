@@ -1,4 +1,5 @@
-"""Map: heading tape, trail, robot marker, origin. Units are mm, labelled in cm.
+"""Map: heading tape, trail, robot marker, origin, event markers. Units are mm,
+labelled in cm.
 
 Frame (CLAUDE.md): x forward, y left, heading CCW from x, origin at run
 start. With y up on screen this is a normal plot: a left turn curves up.
@@ -16,9 +17,10 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPaintEvent, QPen, QPolygonF
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from app.core.config import SensorCalibration
-from app.core.state import RobotState
+from app.core.state import EventRecord, RobotState
 from app.ui import theme
 from app.ui.color_swatch import ColorSwatch
+from app.ui.event_list import event_color
 
 GRID_MINOR_MM = 100  # 10 cm grid (ui-spec)
 GRID_MAJOR_MM = 500
@@ -31,6 +33,32 @@ MARKER_HALF_WIDTH_MM = 45
 TAPE_PX_PER_DEG = 3.2
 TAPE_LABEL_CLEARANCE_PX = 40
 SWATCH_MARGIN_PX = 12
+EVENT_SYMBOLS = {
+    "LOST": "t",
+    "GIVEUP": "t",
+    "FOUND": "o",
+    "OBS": "x",
+    "STALL": "d",
+    "BUMP": "d",
+    "WDOG": "s",
+    "LAP": "star",
+}
+
+
+def event_position(event: EventRecord, sensor_offset_mm: float) -> tuple[float, float]:
+    """Where to draw an event. OBS sits at the obstacle: projected forward from the
+    pose by the measured distance plus the sensor offset (the ultrasonic sensor is
+    assumed to sit at the front, like the colour sensor)."""
+    if event.kind == "OBS" and event.detail:
+        try:
+            ahead = float(event.detail) + sensor_offset_mm
+        except ValueError:
+            return event.x_mm, event.y_mm
+        h = math.radians(event.heading_deg)
+        return event.x_mm + ahead * math.cos(h), event.y_mm + ahead * math.sin(h)
+    return event.x_mm, event.y_mm
+
+
 WAITING_TEXT = "heading appears once the IMU is ready"
 
 
@@ -117,6 +145,7 @@ class MapView(QWidget):
     """Emits `follow_changed` when a manual pan or zoom turns following off."""
 
     follow_changed = Signal(bool)
+    event_clicked = Signal(object)  # EventRecord
 
     def __init__(self) -> None:
         super().__init__()
@@ -148,8 +177,22 @@ class MapView(QWidget):
         self.trail = pg.PlotDataItem(pen=pg.mkPen(theme.TRAIL, width=2))
         self.robot = pg.PlotDataItem(pen=pg.mkPen(theme.ACCENT, width=1.6))
         self.sensor = pg.ScatterPlotItem(size=5, pen=None, brush=pg.mkBrush(theme.ACCENT))
-        for graphic in (self.origin, self.trail, self.robot, self.sensor):
+        self.events = pg.ScatterPlotItem(size=11, hoverable=True, tip=None)
+        self.events.sigClicked.connect(self._event_clicked)
+        self.selection = pg.ScatterPlotItem(
+            size=22, symbol="o", pen=pg.mkPen(theme.TEXT, width=1.4), brush=None
+        )
+        for graphic in (
+            self.origin,
+            self.trail,
+            self.events,
+            self.selection,
+            self.robot,
+            self.sensor,
+        ):
             self.plot.addItem(graphic)
+        self._shown_events: list[EventRecord] = []
+        self.selected: EventRecord | None = None
         self._set_default_range()
         self.plot.getViewBox().sigRangeChangedManually.connect(self._manual_range)
 
@@ -183,6 +226,7 @@ class MapView(QWidget):
             if self.swatch.isHidden():
                 self._place_swatch()
                 self.swatch.show()
+        self._draw_events(state.events)
         if state.trail:
             xs = np.fromiter((p.x_mm for p in state.trail), float, len(state.trail))
             ys = np.fromiter((p.y_mm for p in state.trail), float, len(state.trail))
@@ -220,6 +264,42 @@ class MapView(QWidget):
     def clear(self) -> None:
         self._drawn_version = -1
         self.swatch.hide()
+        self.select_event(None)
+
+    def select_event(self, event: EventRecord | None) -> None:
+        self.selected = event
+        if event is None:
+            self.selection.setData([], [])
+            return
+        x, y = event_position(event, self.sensor_offset_mm)
+        self.selection.setData([x], [y])
+
+    def _draw_events(self, events: list[EventRecord]) -> None:
+        if events == self._shown_events:
+            return
+        self._shown_events = list(events)
+        spots = []
+        for event in events:
+            x, y = event_position(event, self.sensor_offset_mm)
+            color = event_color(event.kind)
+            spots.append(
+                {
+                    "pos": (x, y),
+                    "symbol": EVENT_SYMBOLS.get(event.kind, "o"),
+                    "pen": pg.mkPen(color, width=1.4),
+                    "brush": pg.mkBrush(theme.SUNKEN),
+                    "data": event,
+                }
+            )
+        self.events.setData(spots)
+        if self.selected is not None and self.selected not in events:
+            self.select_event(None)
+
+    def _event_clicked(self, _item, points, _ev=None) -> None:
+        if len(points):
+            event = points[0].data()
+            self.select_event(event)
+            self.event_clicked.emit(event)
         self._set_default_range()
 
     def _set_default_range(self) -> None:

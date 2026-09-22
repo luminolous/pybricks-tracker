@@ -51,17 +51,21 @@ from app.core.protocol import (
     encode_command,
     parse_ack,
 )
-from app.core.state import PortScan, RobotState, TelemetryWatch
+from app.core.recorder import SESSIONS_DIR, SessionError, SessionRecorder, read_session
+from app.core.replay import Replay
+from app.core.state import EventRecord, PortScan, RobotState, TelemetryWatch
 from app.core.tuning import TuningSender
 from app.ui.code_preview import CodePreview
 from app.ui.console_pane import ConsolePane
 from app.ui.dialogs.calibration import CalibrationDialog
 from app.ui.dialogs.connect import ConnectDialog
 from app.ui.dialogs.drift_test import DriftTestDialog
+from app.ui.event_list import EventList, event_color
 from app.ui.link_banner import LinkBanner
 from app.ui.map_view import MapView
 from app.ui.plot_panel import DT_WARN, PlotPanel
 from app.ui.port_panel import PortPanel
+from app.ui.replay_bar import BAR_HEIGHT_PX, ReplayBar, fmt_ms
 from app.ui.theme import caption, label, set_prop
 from app.ui.tuning_panel import TuningPanel
 
@@ -71,6 +75,7 @@ APP_NAME = "Pybricks Tracker"
 MIN_WIDTH_PX = 1280
 MIN_HEIGHT_PX = 800
 HEADER_PX = 44
+CONSOLE_PX = 112
 LEFT_COL_PX = 276  # mockup had 252; port rows need the extra room at real font metrics
 RIGHT_COL_PX = 340
 SCAN_TIMEOUT_S = 10.0
@@ -147,7 +152,7 @@ def _action_button(text: str, key: str, role: str | None = None) -> QPushButton:
     row.addWidget(name)
     row.addStretch()
     row.addWidget(hint)
-    button.setMinimumHeight(30)
+    button.setFixedHeight(27)
     button.name_label = name  # type: ignore[attr-defined]
     return button
 
@@ -187,8 +192,10 @@ class MainWindow(QMainWindow):
         self._base_config = RobotConfig()
         self._ready: Ready | None = None
         self._ready_event = asyncio.Event()
-        self._latest_t: Telemetry | None = None
         self._shown_t: Telemetry | None = None
+        self.recorder = SessionRecorder()
+        self._replay: Replay | None = None
+        self._last_tick_s = clock()
         self._readout_timer = QTimer(self)
         self._readout_timer.setInterval(READOUT_REFRESH_MS)
         self._readout_timer.timeout.connect(self._tick_ui)
@@ -206,7 +213,14 @@ class MainWindow(QMainWindow):
         body.addWidget(self._build_right())
         root.addLayout(body, 1)
         self.console = ConsolePane()
-        self.console.setFixedHeight(112)
+        self.console.setFixedHeight(CONSOLE_PX)
+        self.replay_bar = ReplayBar()
+        self.replay_bar.hide()
+        self.replay_bar.play_toggled.connect(self._replay_play_toggled)
+        self.replay_bar.seeked.connect(self._replay_seeked)
+        self.replay_bar.speed_changed.connect(self._replay_speed)
+        self.replay_bar.exit_clicked.connect(self.exit_replay)
+        root.addWidget(self.replay_bar)
         root.addWidget(self.console)
         self.setCentralWidget(central)
         self.banner = LinkBanner(central, top_px=HEADER_PX)
@@ -217,6 +231,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+P"), self, activated=self._scan_clicked)
         QShortcut(QKeySequence("Ctrl+D"), self, activated=self.show_drift_test)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.show_calibration)
+        QShortcut(QKeySequence("Ctrl+O"), self, activated=self._replay_clicked)
         QShortcut(QKeySequence("Esc"), self, activated=self._stop_clicked)
         app = QApplication.instance()
         if app is not None:
@@ -268,6 +283,10 @@ class MainWindow(QMainWindow):
         row.addWidget(name_seg)
         row.addWidget(_segment(self.link_dot, self.hub_label, self.link_label))
         row.addWidget(_segment(self.run_state, self.mode_label))
+        self.rec_label = label("", tone="danger", mono=True)
+        self.rec_seg = _segment(self.rec_label)
+        self.rec_seg.hide()
+        row.addWidget(self.rec_seg)
         row.addStretch()
         row.addWidget(_segment(label("battery", tone="muted"), self.battery_label))
         row.addWidget(_segment(label("loop", tone="muted"), self.loop_label))
@@ -288,8 +307,8 @@ class MainWindow(QMainWindow):
 
         geometry = _frame("section")
         grid = QGridLayout(geometry)
-        grid.setContentsMargins(16, 14, 16, 14)
-        grid.setVerticalSpacing(8)
+        grid.setContentsMargins(16, 10, 16, 10)
+        grid.setVerticalSpacing(5)
         grid.addWidget(caption("Geometry"), 0, 0, 1, 2)
         self.geometry_fields: dict[str, QDoubleSpinBox] = {}
         for i, (key, text) in enumerate(
@@ -322,8 +341,8 @@ class MainWindow(QMainWindow):
 
         actions = QWidget()
         box = QVBoxLayout(actions)
-        box.setContentsMargins(16, 14, 16, 14)
-        box.setSpacing(6)
+        box.setContentsMargins(16, 10, 16, 10)
+        box.setSpacing(4)
         run_row = QHBoxLayout()
         run_row.setSpacing(6)
         self.run_button = _action_button("Run", "F5", role="run")
@@ -352,6 +371,9 @@ class MainWindow(QMainWindow):
         self.code_button = _action_button("Hub program", "Ctrl+U")
         self.code_button.clicked.connect(self.show_code_preview)
         box.addWidget(self.code_button)
+        self.replay_button = _action_button("Replay run", "Ctrl+O")
+        self.replay_button.clicked.connect(self._replay_clicked)
+        box.addWidget(self.replay_button)
         box.addStretch()
         layout.addWidget(actions, 1)
         return col
@@ -391,7 +413,7 @@ class MainWindow(QMainWindow):
         tools_layout.setContentsMargins(0, 12, 0, 12)
         tools_layout.setSpacing(4)
         self.fit_button = _tool_button("Fit", "Fit the whole trail in view")
-        self.fit_button.clicked.connect(lambda: self.map.fit(self.state))
+        self.fit_button.clicked.connect(lambda: self.map.fit(self.view_state))
         self.follow_button = _tool_button("Follow", "Keep the robot centred")
         self.follow_button.setCheckable(True)
         self.follow_button.setChecked(True)
@@ -436,15 +458,10 @@ class MainWindow(QMainWindow):
         self.tuning.changed.connect(self._tuning_changed)
         layout.addWidget(self.tuning)
 
-        events = _frame("section")
-        e_layout = QVBoxLayout(events)
-        e_layout.setContentsMargins(16, 14, 16, 14)
-        e_layout.addWidget(caption("Events"))
-        hint = label("Event list arrives in M7. Events show in the console.", tone="dim")
-        hint.setWordWrap(True)
-        e_layout.addWidget(hint)
-        e_layout.addStretch()
-        layout.addWidget(events, 1)
+        self.event_list = EventList()
+        self.event_list.event_clicked.connect(self._event_selected)
+        self.map.event_clicked.connect(self._event_selected)
+        layout.addWidget(self.event_list, 1)
         return col
 
     # -- config ---------------------------------------------------------------
@@ -505,6 +522,7 @@ class MainWindow(QMainWindow):
                 await asyncio.wait_for(self.stop_program("app closing"), timeout=2)
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(self.conn.disconnect(), timeout=3)
+        self.recorder.close()
 
     def tick_1hz(self, _tick: int) -> None:
         self.rx_label.setText(f"{self._rx_count} Hz")
@@ -537,6 +555,8 @@ class MainWindow(QMainWindow):
 
     def run_blocker(self) -> str | None:
         """Why Run is not possible right now, or None."""
+        if self._replay is not None:
+            return "Exit replay to run."
         if not self.conn.connected:
             return "Connect to a hub to run."
         if self.conn.program_running:
@@ -655,6 +675,86 @@ class MainWindow(QMainWindow):
             f"edge {calibration.edge}"
         )
 
+    # -- replay ---------------------------------------------------------------
+
+    def open_replay(self, path: Path) -> bool:
+        if self.conn.program_running:
+            self.note("Stop the running program before replaying.")
+            return False
+        try:
+            session = read_session(path)
+        except SessionError as exc:
+            self.note(str(exc))
+            return False
+        replay = Replay(session)
+        replay.seek(replay.end_ms)  # open on the whole run; Play starts from the top
+        self._replay = replay
+        self.map.clear()
+        self.plots.refresh(replay.state)
+        self.replay_bar.set_session(
+            replay.duration_ms,
+            [(e.t_ms - replay.start_ms, event_color(e.kind)) for e in replay.events],
+        )
+        self.replay_bar.set_position(replay.duration_ms, False)
+        self.replay_bar.show()
+        self.console.setFixedHeight(CONSOLE_PX - BAR_HEIGHT_PX)  # keep the body height
+        self.run_state.setText("REPLAY")
+        set_prop(self.run_state, "tone", "accent")
+        self.mode_label.setText(session.mode)
+        self._set_tuning_mode("replay")
+        self.follow_button.setChecked(False)
+        self.map.refresh(replay.state)
+        self.map.fit(replay.state)
+        skipped = f", {session.skipped} unreadable lines skipped" if session.skipped else ""
+        self.note(f"replaying {path.name}: {fmt_ms(replay.duration_ms)}{skipped}")
+        self._update_actions()
+        return True
+
+    def exit_replay(self) -> None:
+        if self._replay is None:
+            return
+        self._replay = None
+        self.replay_bar.hide()
+        self.console.setFixedHeight(CONSOLE_PX)
+        self.map.clear()
+        self._shown_t = None
+        self._on_program_running(self.conn.program_running)
+        self.follow_button.setChecked(True)
+        self.note("replay closed")
+
+    def _replay_clicked(self) -> None:
+        if not self.replay_button.isEnabled():
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Replay run", str(SESSIONS_DIR), "Session (*.jsonl)"
+        )
+        if path:
+            self.open_replay(Path(path))
+
+    def _replay_play_toggled(self) -> None:
+        if self._replay is None:
+            return
+        if self._replay.playing:
+            self._replay.pause()
+        else:
+            self._replay.play()
+            self.follow_button.setChecked(True)
+
+    def _replay_seeked(self, rel_ms: float) -> None:
+        if self._replay is not None:
+            self._replay.seek(self._replay.start_ms + rel_ms)
+
+    def _replay_speed(self, speed: float) -> None:
+        if self._replay is not None:
+            self._replay.speed = speed
+
+    def _event_selected(self, event: EventRecord) -> None:
+        self.map.select_event(event)
+        self.event_list.select(event)
+        if self._replay is not None:
+            self._replay.pause()
+            self._replay.seek(event.t_ms)
+
     def show_drift_test(self) -> None:
         if self._drift_dialog is None:
             self._drift_dialog = DriftTestDialog(
@@ -673,12 +773,22 @@ class MainWindow(QMainWindow):
             f"geometry set: wheel {geometry.wheel_diameter_mm} mm, axle {geometry.axle_track_mm} mm"
         )
 
-    async def _finish_drift_test(self) -> None:
-        # The final T line can still sit in the queue when the running flag
-        # drops; let the drain catch up before reading the final pose.
+    async def _drain_queue(self) -> None:
+        # Lines can still sit in the queue when the running flag drops.
         await asyncio.sleep(DRAIN_GRACE_S)
         while not self.conn.lines.empty():
             await asyncio.sleep(0.01)
+
+    async def _finish_recording(self) -> None:
+        await self._drain_queue()
+        if self.conn.program_running:
+            return  # a new run started meanwhile and owns the recorder
+        path = self.recorder.close()
+        if path is not None:
+            self.note(f"saved {path}")
+
+    async def _finish_drift_test(self) -> None:
+        await self._drain_queue()  # the final T line holds the estimate
         if self._drift_dialog is not None:
             self._drift_dialog.program_finished(self.state.pose)
 
@@ -702,11 +812,12 @@ class MainWindow(QMainWindow):
             self._handle_record(decode_line(line))
 
     def _handle_record(self, record: object) -> None:
+        if isinstance(record, Telemetry | Detail | Status | Event):
+            self.recorder.write(record)
         if isinstance(record, Status | Detail):
             self.state.apply(record)
         elif isinstance(record, Telemetry):
             self.state.apply(record)
-            self._latest_t = record
             self._watch.saw_telemetry(self._clock())
             self._banner_dismissed = False
         elif isinstance(record, Ready):
@@ -724,7 +835,11 @@ class MainWindow(QMainWindow):
                 self.map.clear()
                 self.follow_button.setChecked(True)
                 self._start_live_tuning(record)
+                if record.compatible:
+                    path = self.recorder.start(record.mode.lower(), self.current_config())
+                    self.note(f"recording {path.name}")
         elif isinstance(record, Event):
+            self.state.apply(record)
             ack = parse_ack(record.detail) if record.kind == "ACK" else None
             if ack is not None:
                 self.tuner.ack(*ack)
@@ -736,16 +851,31 @@ class MainWindow(QMainWindow):
             self.port_panel.apply_scan(self.scan)
             self._scan_done.set()
 
+    @property
+    def view_state(self) -> RobotState:
+        """What the map, plots and readouts show: the replay, or the live robot."""
+        return self._replay.state if self._replay is not None else self.state
+
     def _tick_ui(self) -> None:
+        now = self._clock()
+        if self._replay is not None:
+            self._replay.advance(now - self._last_tick_s)
+            self.replay_bar.set_position(
+                self._replay.position_ms - self._replay.start_ms, self._replay.playing
+            )
+        self._last_tick_s = now
+        view = self.view_state
         self._refresh_readouts()
         calibration = self._base_config.calibration
         self.map.sensor_offset_mm = self.geometry_fields["sensor_offset_mm"].value()
         self.map.calibration = calibration
-        self.map.refresh(self.state)
+        self.map.refresh(view)
         self.plots.calibration = calibration
-        self.plots.refresh(self.state)
-        if self.state.battery_mv is not None:
-            self.battery_label.setText(f"{self.state.battery_mv / 1000:.2f} V")
+        self.plots.refresh(view)
+        self.event_list.set_events(view.events)
+        self._show_rec_label()
+        if view.battery_mv is not None:
+            self.battery_label.setText(f"{view.battery_mv / 1000:.2f} V")
         self._show_loop_dt()
         if self._tuning_live:
             for key in self.tuning.rows:
@@ -786,7 +916,7 @@ class MainWindow(QMainWindow):
         self.banner.place()
 
     def _show_loop_dt(self) -> None:
-        detail = self.state.detail
+        detail = self.view_state.detail
         if detail is None:
             return
         dt = detail.dt_ms
@@ -795,8 +925,24 @@ class MainWindow(QMainWindow):
         if self.loop_label.property("tone") != tone:
             set_prop(self.loop_label, "tone", tone)
 
+    def _show_rec_label(self) -> None:
+        if self._replay is not None:
+            r = self._replay
+            text, tone = f"PLAY {fmt_ms(r.position_ms - r.start_ms)}", "accent"
+        elif self.recorder.recording:
+            t = self.state.last_t
+            text, tone = f"REC {fmt_ms(t.t_ms if t else 0)}", "danger"
+        else:
+            self.rec_seg.hide()
+            return
+        if self.rec_label.text() != text:
+            self.rec_label.setText(text)
+        if self.rec_label.property("tone") != tone:
+            set_prop(self.rec_label, "tone", tone)
+        self.rec_seg.show()
+
     def _refresh_readouts(self) -> None:
-        t = self._latest_t
+        t = self.view_state.last_t
         if t is None or t is self._shown_t:
             return
         self._shown_t = t
@@ -901,6 +1047,8 @@ class MainWindow(QMainWindow):
             self._check_link()
             if self._current_mode == "drift_test":
                 self._spawn(self._finish_drift_test())
+            if self.recorder.recording:
+                self._spawn(self._finish_recording())
             self._current_mode = None
             self._set_tuning_mode("config")
         self._update_actions()
@@ -912,12 +1060,17 @@ class MainWindow(QMainWindow):
         self.run_button.setEnabled(blocker is None)
         self.run_hint.setText(blocker or "")
         self.run_hint.setVisible(bool(blocker))
-        self.scan_button.setEnabled(connected and not running)
+        replaying = self._replay is not None
+        idle = connected and not running and not replaying
+        self.scan_button.setEnabled(idle)
+        self.drift_button.setEnabled(not replaying)
+        self.calibrate_button.setEnabled(not replaying)
+        self.replay_button.setEnabled(not running)
         self.stop_button.setEnabled(running)
         self.estop_button.setEnabled(connected)
-        # Ports and geometry are frozen while a program runs; tuning goes live instead.
+        # Ports and geometry are frozen while a program runs or a replay shows.
         for widget in (
             self.port_panel,
             *self.geometry_fields.values(),
         ):
-            widget.setEnabled(not running)
+            widget.setEnabled(not running and not replaying)

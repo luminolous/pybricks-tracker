@@ -6,6 +6,7 @@ Modes:
 - live: every change goes to the hub (rate limited by TuningSender) and the
   acknowledged value is shown under the control, so a dropped write is visible.
 - off: the running program ignores tuning (drift test, calibration); disabled.
+- replay: a recorded run is showing; disabled.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ MODE_HINTS = {
     "waiting": "waiting for the hub",
     "live": "live, no re-upload",
     "off": "not used by this program",
+    "replay": "disabled during replay",
 }
 
 

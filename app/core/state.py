@@ -1,11 +1,12 @@
 """RobotState, SessionState, Pose, EventRecord.
 
-Holds the port scan result and the telemetry watch. Pose history arrives
-with M4.
+Holds the port scan result, the telemetry watch, and the live robot state:
+pose, trail, events and plot history.
 """
 
 from __future__ import annotations
 
+import itertools
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -13,6 +14,7 @@ from app.core.protocol import (
     PORT_LETTERS,
     Detail,
     DeviceType,
+    Event,
     PortInfo,
     PortScanDone,
     Status,
@@ -86,6 +88,36 @@ class TelemetryWatch:
 
 
 MAX_TRAIL_POINTS = 36_000  # 30 minutes of T at 20 Hz
+MAX_EVENTS = 2_000
+LISTED_EVENT_KINDS = frozenset({"LOST", "FOUND", "GIVEUP", "OBS", "STALL", "BUMP", "LAP", "WDOG"})
+# One counter for every RobotState: the map and plots skip redraws by
+# version, and replay swaps state objects, so versions must never repeat.
+_versions = itertools.count(1)
+
+
+@dataclass(frozen=True)
+class EventRecord:
+    kind: str
+    t_ms: int
+    x_mm: float
+    y_mm: float
+    heading_deg: float  # robot heading when it happened; places OBS points
+    detail: str | None = None
+
+    def describe(self) -> str:
+        d = self.detail
+        return {
+            "LOST": "Line lost, searching",
+            "FOUND": "Line found",
+            "GIVEUP": "Search failed, robot stopped",
+            "OBS": f"Obstacle at {d} mm",
+            "STALL": f"{'Left' if d == 'L' else 'Right' if d == 'R' else 'A'} motor stalled",
+            "BUMP": f"Bump, {d} mm/s²",
+            "LAP": f"Lap {d}",
+            "WDOG": f"Watchdog stop after {d} ms without commands",
+        }.get(self.kind, self.kind)
+
+
 HISTORY_S = 10.0  # plots show the last 10 seconds (ui-spec)
 
 
@@ -145,10 +177,15 @@ class RobotState:
         self.battery_mv: int | None = None
         self.detail: Detail | None = None
         self.reflection: int | None = None
+        self.last_t: Telemetry | None = None
+        self.events: list[EventRecord] = []
         # (reflection, steer) from T at 20 Hz; (load_left, load_right, dt_ms) from D at 4 Hz
         self.fast = History()
         self.slow = History()
-        self.version = 0
+        self.version = next(_versions)
+
+    def _changed(self) -> None:
+        self.version = next(_versions)
 
     def reset(self) -> None:
         """New run: forget the trail and the IMU state, keep the battery reading."""
@@ -157,36 +194,51 @@ class RobotState:
         self.imu_ready = False
         self.detail = None
         self.reflection = None
+        self.last_t = None
+        self.events.clear()
         self.fast.clear()
         self.slow.clear()
-        self.version += 1
+        self._changed()
 
     def reset_origin(self) -> None:
         """The hub moved its origin (ORG): the old trail is in another frame."""
         self.trail.clear()
-        self.version += 1
+        self._changed()
 
     def apply(self, record: object) -> bool:
         """Apply a decoded record. Returns True when it changed the state."""
         if isinstance(record, Status):
             self.imu_ready = record.imu_ready
             self.battery_mv = record.battery_mv
-            self.version += 1
+            self._changed()
             return True
         if isinstance(record, Detail):
             self.detail = record
             self.slow.add(record.t_ms, record.load_left, record.load_right, record.dt_ms)
-            self.version += 1
+            self._changed()
+            return True
+        if isinstance(record, Event):
+            if record.kind not in LISTED_EVENT_KINDS:
+                return False  # ACK is bookkeeping, not an event (protocol.md)
+            heading = self.pose.heading_deg if self.pose else 0.0
+            self.events.append(
+                EventRecord(
+                    record.kind, record.t_ms, record.x_mm, record.y_mm, heading, record.detail
+                )
+            )
+            del self.events[:-MAX_EVENTS]
+            self._changed()
             return True
         if isinstance(record, Telemetry):
             pose = Pose(record.t_ms, record.x_mm, record.y_mm, record.heading_deg)
             self.pose = pose
             self.reflection = record.reflection
+            self.last_t = record
             self.fast.add(record.t_ms, record.reflection, record.steer)
             if self.imu_ready:
                 self.trail.append(pose)
                 if len(self.trail) > self.max_points:
                     del self.trail[: len(self.trail) - self.max_points]
-            self.version += 1
+            self._changed()
             return True
         return False

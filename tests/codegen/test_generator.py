@@ -219,3 +219,13 @@ async def test_calibrate_program_compiles_and_holds_still(tmp_path: Path) -> Non
 def test_calibrate_needs_a_line_sensor() -> None:
     with pytest.raises(GeneratorError, match="calibrate program needs a line sensor"):
         render(without(Role.LINE_SENSOR), "calibrate")
+
+
+def test_stall_and_bump_are_checked_at_slow_rates(source: str) -> None:
+    loop = function(source, "run_loop")
+    assert loop.index("if n % T_EVERY == 0:") < loop.index("check_bump()")
+    assert loop.index("if n % D_EVERY == 0:") < loop.index("check_stall()")
+    stall = function(source, "check_stall")
+    assert "if left and not _stalled_left:" in stall  # onset only
+    bump = function(source, "check_bump")
+    assert "BUMP_COOLDOWN_MS" in bump and 'emit_e("BUMP", peak)' in bump

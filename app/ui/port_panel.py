@@ -92,7 +92,7 @@ class PortPanel(QFrame):
 
         grid = QGridLayout()
         grid.setHorizontalSpacing(6)
-        grid.setVerticalSpacing(6)
+        grid.setVerticalSpacing(3)
         grid.setColumnStretch(1, 1)
         self.rows = {port: PortRow(port, grid, i) for i, port in enumerate(PORT_LETTERS)}
 
@@ -100,8 +100,8 @@ class PortPanel(QFrame):
         self.validation.setWordWrap(True)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setSpacing(8)
         layout.addLayout(head)
         layout.addLayout(grid)
         layout.addWidget(self.validation)
