@@ -38,7 +38,8 @@ Known deviations in the Qt build:
 
 - IBM Plex Sans for labels and text.
 - IBM Plex Mono for every number, the console and protocol codes.
-- Both are OFL licensed; bundle the font files with the app.
+- Both are OFL licensed and bundled in `app/ui/fonts/` (from google/fonts;
+  Plex Sans is the variable font). `OFL.txt` sits next to them.
 
 ## Rules
 

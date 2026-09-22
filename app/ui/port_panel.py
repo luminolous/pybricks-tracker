@@ -37,7 +37,7 @@ class PortRow:
         self.role = QComboBox()
         for role in Role:
             self.role.addItem(ROLE_LABELS[role], role)
-        self.role.setFixedWidth(96)
+        self.role.setFixedWidth(100)
         self.direction = QComboBox()
         for direction in Direction:
             self.direction.addItem(direction.value, direction)
