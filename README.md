@@ -48,6 +48,16 @@ python -m app.main
 A window opens. Turn on the hub, click Connect, pick it from the list, click
 Scan to detect what is plugged into each port, assign roles, then click Run.
 
+## Development
+
+```powershell
+ruff check .
+ruff format .
+pytest
+```
+
+Tests run without a hub connected and without a display (Qt runs offscreen).
+
 ## How it works
 
 The app has two layers that run in different places.

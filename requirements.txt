@@ -1,0 +1,12 @@
+# Pinned on 2026-09-23. pybricksdev renames APIs between releases; bump deliberately.
+PySide6==6.11.2
+pyqtgraph==0.14.0
+qasync==0.28.0
+Jinja2==3.1.6
+pybricksdev==2.3.2
+bleak==3.0.2
+
+# Dev
+pytest==9.1.1
+pytest-asyncio==1.4.0
+ruff==0.16.8

@@ -217,6 +217,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Pybricks Tracker: recorded runs
+sessions/
+
 # Agents
 .claude
 CLAUDE.md
