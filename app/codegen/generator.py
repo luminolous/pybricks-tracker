@@ -27,7 +27,7 @@ D_EVERY_LOOPS = 25  # D at 4 Hz
 S_EVERY_LOOPS = 100  # S at 1 Hz
 DISTANCE_EVERY_LOOPS = 10  # ultrasonic at 10 Hz (hub-programs.md)
 
-MODES = ("line_follower", "drift_test", "calibrate")
+MODES = ("line_follower", "drift_test", "calibrate", "teleop")
 NEEDS_LINE_SENSOR = ("line_follower", "calibrate")
 
 

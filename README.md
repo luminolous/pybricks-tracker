@@ -19,6 +19,7 @@ robot's path live while streaming sensor telemetry back.
 - Odometry drift validation with suggested geometry corrections
 - Session recording, replay, and overlay comparison between runs
 - PNG, CSV and JSONL export
+- Teleop: drive the robot with W A S D
 
 ## Requirements
 
@@ -47,6 +48,32 @@ python -m app.main
 
 A window opens. Turn on the hub, click Connect, pick it from the list, click
 Scan to detect what is plugged into each port, assign roles, then click Run.
+
+| Key | Action |
+|---|---|
+| Space | E-STOP (while a program runs, even inside text fields) |
+| F5 / Esc | Run the line follower / stop the program |
+| Ctrl+P | Scan ports |
+| Ctrl+K | Calibrate the line sensor (black, then white) |
+| Ctrl+D | Drift test |
+| Ctrl+T | Teleop; then W A S D drive, the SPD slider sets the speed |
+| Ctrl+O | Replay a recorded run |
+| Ctrl+E | Export the map (PNG), telemetry (CSV) or session (JSONL) |
+| Ctrl+U | Show the generated hub program |
+
+Every run is recorded to `sessions/`. Overlay previous runs from the map's
+Overlay button to compare tuning side by side.
+
+## Build a standalone exe
+
+```powershell
+pyinstaller PybricksTracker.spec
+dist\PybricksTracker.exe --selftest
+```
+
+`dist\PybricksTracker.exe` runs on Windows without a Python install.
+`--selftest` renders and compiles every hub program with the bundled
+`mpy-cross`, without a hub or a window, and exits non-zero on any failure.
 
 ## Development
 
@@ -85,7 +112,9 @@ Measured results for this robot:
 ## Safety
 
 The hub program stops the robot if no heartbeat arrives from the laptop for 2
-seconds. The spacebar is a global E-STOP while a run is active.
+seconds. The spacebar is a global E-STOP while a run is active. In teleop the
+robot also stops 300 ms after the last drive command, refuses to drive forward
+into an obstacle, and releases every key when the window loses focus.
 
 ## License
 

@@ -19,6 +19,7 @@ from typing import Any
 from PySide6.QtCore import QEvent, QLocale, QObject, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QApplication,
     QDoubleSpinBox,
     QFileDialog,
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QPushButton,
@@ -57,6 +59,7 @@ from app.core.protocol import (
 from app.core.recorder import SESSIONS_DIR, SessionError, SessionRecorder, read_session
 from app.core.replay import Replay
 from app.core.state import EventRecord, PortScan, RobotState, TelemetryWatch
+from app.core.teleop import TeleopDriver
 from app.core.tuning import TuningSender
 from app.ui.code_preview import CodePreview
 from app.ui.console_pane import ConsolePane
@@ -92,7 +95,9 @@ STATE_TONES = {
     "SEARCH": "warn",
     "OBSTACLE": "danger",
     "STOP": "danger",
+    "TELEOP": "accent",
 }
+TELEOP_KEYS = {Qt.Key.Key_W: "W", Qt.Key.Key_A: "A", Qt.Key.Key_S: "S", Qt.Key.Key_D: "D"}
 NOTE_PREFIX = "» "  # app messages in the console; never a protocol prefix
 
 ConnectionFactory = Callable[..., HubConnection]
@@ -184,6 +189,8 @@ class MainWindow(QMainWindow):
             on_link_state=self._on_link_state, on_program_running=self._on_program_running
         )
         self.tuner = TuningSender(self.conn.write_line, clock=clock)
+        self.teleop = TeleopDriver(self.conn.write_line)
+        self._teleop_task: asyncio.Task | None = None
         self.scan = PortScan()
         self._scan_done = asyncio.Event()
         self._tasks: set[asyncio.Task] = set()
@@ -239,6 +246,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.show_calibration)
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self._replay_clicked)
         QShortcut(QKeySequence("Ctrl+E"), self, activated=self._export_clicked)
+        QShortcut(QKeySequence("Ctrl+T"), self, activated=self._drive_clicked)
         QShortcut(QKeySequence("Esc"), self, activated=self._stop_clicked)
         app = QApplication.instance()
         if app is not None:
@@ -441,6 +449,10 @@ class MainWindow(QMainWindow):
         tools_layout.addWidget(self.trail_button)
         tools_layout.addWidget(self.overlay_button)
         tools_layout.addStretch()
+        self.drive_button = _tool_button("Drive\nWASD", "Teleop: drive with W A S D (Ctrl+T)")
+        self.drive_button.setCheckable(True)
+        self.drive_button.clicked.connect(self._drive_clicked)
+        tools_layout.addWidget(self.drive_button)
 
         grid.addWidget(self.map, 0, 0)
         grid.addWidget(readout, 1, 0)
@@ -515,12 +527,19 @@ class MainWindow(QMainWindow):
         self._drain_task = asyncio.ensure_future(self._drain_lines())
         self._heartbeat_task = asyncio.ensure_future(run_heartbeat(self.conn))
         self._tuning_task = asyncio.ensure_future(self.tuner.run(lambda: self._tuning_live))
+        self._teleop_task = asyncio.ensure_future(self.teleop.run(self.teleop_active))
         self._readout_timer.start()
 
     async def shutdown(self) -> None:
         """Stop the hub program if one runs, then disconnect. Never raises."""
         self._readout_timer.stop()
-        for task in (self._drain_task, self._heartbeat_task, self._tuning_task, *self._tasks):
+        for task in (
+            self._drain_task,
+            self._heartbeat_task,
+            self._tuning_task,
+            self._teleop_task,
+            *self._tasks,
+        ):
             if task:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
@@ -682,6 +701,38 @@ class MainWindow(QMainWindow):
             f"calibration set: black {calibration.black}, white {calibration.white}, "
             f"edge {calibration.edge}"
         )
+
+    # -- teleop -----------------------------------------------------------------
+
+    def teleop_active(self) -> bool:
+        """Drive keys go to the robot only while a teleop program runs and answered R."""
+        return (
+            self._current_mode == "teleop"
+            and self.conn.program_running
+            and self._ready is not None
+            and self._ready.mode == "TELEOP"
+        )
+
+    def _drive_clicked(self) -> None:
+        if self._current_mode == "teleop" and self.conn.program_running:
+            self._spawn(self.stop_program("teleop stopped"))
+            return
+        self.drive_button.setChecked(False)
+        blocker = self.run_blocker()
+        if blocker:
+            self.note(blocker)
+            return
+        self.teleop.reset()
+        self.teleop.speed_mm_s = self.tuning.rows["SPD"].value()
+        self._spawn(self._start_teleop())
+
+    async def _start_teleop(self) -> None:
+        if await self.run_program("teleop"):
+            self.drive_button.setChecked(True)
+            self.note("Drive with W A S D (SPD sets the speed). Space stops everything.")
+
+    def _typing(self) -> bool:
+        return isinstance(QApplication.focusWidget(), QLineEdit | QAbstractSpinBox)
 
     # -- trail modes, overlays, export ------------------------------------------
 
@@ -1150,6 +1201,22 @@ class MainWindow(QMainWindow):
             self.load_preset(Path(path))
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        kind = event.type()
+        if kind in (QEvent.Type.WindowDeactivate, QEvent.Type.ApplicationDeactivate):
+            self.teleop.release_all()  # a key released elsewhere must not keep it driving
+        if (
+            kind in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
+            and event.key() in TELEOP_KEYS
+            and self.teleop_active()
+            and not self._typing()
+        ):
+            if not event.isAutoRepeat():
+                key = TELEOP_KEYS[event.key()]
+                if kind == QEvent.Type.KeyPress:
+                    self.teleop.press(key)
+                else:
+                    self.teleop.release(key)
+            return True
         # Spacebar is a global E-STOP while a program runs, even inside text fields.
         if (
             event.type() == QEvent.Type.KeyPress
@@ -1192,6 +1259,9 @@ class MainWindow(QMainWindow):
                 self._spawn(self._finish_drift_test())
             if self.recorder.recording:
                 self._spawn(self._finish_recording())
+            if self._current_mode == "teleop":
+                self.teleop.reset()
+                self.drive_button.setChecked(False)
             self._current_mode = None
             self._set_tuning_mode("config")
         self._update_actions()
@@ -1209,6 +1279,8 @@ class MainWindow(QMainWindow):
         self.drift_button.setEnabled(not replaying)
         self.calibrate_button.setEnabled(not replaying)
         self.replay_button.setEnabled(not running)
+        teleop_running = running and self._current_mode == "teleop"
+        self.drive_button.setEnabled(blocker is None or teleop_running)
         self.stop_button.setEnabled(running)
         self.estop_button.setEnabled(connected)
         # Ports and geometry are frozen while a program runs or a replay shows.

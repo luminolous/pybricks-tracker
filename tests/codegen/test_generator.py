@@ -145,7 +145,7 @@ def test_invalid_configs_raise(config: RobotConfig, message: str) -> None:
 
 def test_unknown_mode_raises() -> None:
     with pytest.raises(GeneratorError):
-        render(DEFAULT, "teleop")
+        render(DEFAULT, "dance")
 
 
 def test_generate_keeps_file_on_disk(tmp_path: Path) -> None:
@@ -229,3 +229,26 @@ def test_stall_and_bump_are_checked_at_slow_rates(source: str) -> None:
     assert "if left and not _stalled_left:" in stall  # onset only
     bump = function(source, "check_bump")
     assert "BUMP_COOLDOWN_MS" in bump and 'emit_e("BUMP", peak)' in bump
+
+
+def test_drive_setpoint_is_clamped_on_the_hub(source: str) -> None:
+    check = function(source, "check_commands")
+    assert 'elif key == "DRV":' in check
+    assert "max(-DRV_MAX_SPEED, min(DRV_MAX_SPEED, float(speed)))" in check
+    assert "_drv_timer.reset()" in check
+    assert "DRV_MAX_SPEED = 300" in source and "DRV_MAX_TURN = 180" in source
+
+
+def test_teleop_has_a_dead_man_and_obstacle_stop() -> None:
+    source = render(DEFAULT, "teleop")
+    control = function(source, "control_step")
+    assert "if _drv_timer.time() > DRIVE_TIMEOUT_MS:" in control
+    assert "DRIVE_TIMEOUT_MS = 300" in source
+    assert "blocked = speed > 0 and _distance_mm < OBSTACLE_MM" in control
+    assert "robot.drive(speed, turn)" in control
+    # the watchdog still guards teleop through the shared base
+    assert "trip_watchdog()" in function(source, "run_loop")
+
+
+def test_teleop_without_distance_sensor_has_no_obstacle_check() -> None:
+    assert "_distance_mm < OBSTACLE_MM" not in render(without(Role.DISTANCE_SENSOR), "teleop")

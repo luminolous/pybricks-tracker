@@ -56,6 +56,13 @@ KD = {{ tuning.kd }}
 BASE_SPEED = {{ tuning.base_speed_mm_s }}
 OBSTACLE_MM = {{ tuning.obstacle_threshold_mm }}
 
+# teleop setpoint (protocol.md, DRV); only teleop.py.j2 drives from it
+DRV_MAX_SPEED = 300
+DRV_MAX_TURN = 180
+DRV_SPEED = 0
+DRV_TURN = 0
+_drv_timer = StopWatch()
+
 STOPPED = False
 PAUSED = False
 STATE = "IDLE"
@@ -196,7 +203,7 @@ def check_bump():
 
 
 def check_commands():
-    global KP, KD, BASE_SPEED, OBSTACLE_MM, STOPPED, PAUSED
+    global KP, KD, BASE_SPEED, OBSTACLE_MM, STOPPED, PAUSED, DRV_SPEED, DRV_TURN
     while _poll.poll(0):
         line = usys.stdin.readline().strip()
         if not line:
@@ -225,6 +232,11 @@ def check_commands():
                     PAUSED = False
             elif key == "ORG":
                 reset_origin()
+            elif key == "DRV":
+                speed, _, turn = value.partition(",")
+                DRV_SPEED = max(-DRV_MAX_SPEED, min(DRV_MAX_SPEED, float(speed)))
+                DRV_TURN = max(-DRV_MAX_TURN, min(DRV_MAX_TURN, float(turn)))
+                _drv_timer.reset()
         except ValueError:
             pass  # malformed value: no ACK, keep the old value, keep driving safely
 

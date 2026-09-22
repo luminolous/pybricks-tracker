@@ -1,0 +1,42 @@
+{% extends "_base.py.j2" %}
+{% block control %}
+# Teleop: drive from the latest DRV setpoint (WASD in the app). A setpoint
+# older than DRIVE_TIMEOUT_MS is a dead man's switch: the robot stops even
+# before the 2 s watchdog would.
+
+DRIVE_TIMEOUT_MS = 300
+
+_blocked = False
+
+
+def setup():
+    global STATE
+    STATE = "IDLE"
+    robot.stop()
+
+
+def control_step(n, refl):
+    global STATE, STEER, _blocked
+    speed = DRV_SPEED
+    turn = DRV_TURN
+    if _drv_timer.time() > DRIVE_TIMEOUT_MS:
+        speed = 0
+        turn = 0
+{% if distance %}
+    # Never drive forward into an obstacle; reversing and turning stay allowed.
+    blocked = speed > 0 and _distance_mm < OBSTACLE_MM
+    if blocked and not _blocked:
+        emit_e("OBS", _distance_mm)
+    _blocked = blocked
+    if blocked:
+        speed = 0
+{% endif %}
+    if speed == 0 and turn == 0:
+        robot.stop()
+        STEER = 0
+        STATE = "IDLE"
+        return
+    STEER = turn
+    STATE = "TELEOP"
+    robot.drive(speed, turn)
+{% endblock %}

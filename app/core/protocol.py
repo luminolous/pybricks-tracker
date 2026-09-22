@@ -233,7 +233,7 @@ def _decode_event(fields: list[str]) -> Event | None:
     )
 
 
-COMMAND_KEYS = frozenset({"KP", "KD", "SPD", "THR", "MODE", "HB", "ORG"})
+COMMAND_KEYS = frozenset({"KP", "KD", "SPD", "THR", "MODE", "HB", "ORG", "DRV"})
 MODE_VALUES = frozenset({"STOP", "PAUSE", "RESUME"})
 
 
@@ -248,6 +248,11 @@ def encode_command(key: str, value: float | int | str | None = None) -> str:
     if isinstance(value, float):
         value = f"{value:.4f}".rstrip("0").rstrip(".")
     return f"{key},{value}"
+
+
+def encode_drive(speed_mm_s: float, turn_deg_s: float) -> str:
+    """`DRV,<speed>,<turn>`; positive turn is right (Pybricks drive() sign)."""
+    return f"DRV,{round(speed_mm_s)},{round(turn_deg_s)}"
 
 
 def _decode_port(fields: list[str]) -> PortInfo | PortScanDone | None:
