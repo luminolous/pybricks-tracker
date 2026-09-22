@@ -11,6 +11,7 @@ from app.core.protocol import (
     PortInfo,
     PortScanDone,
     Ready,
+    Status,
     Telemetry,
     decode_line,
     device_type,
@@ -130,3 +131,13 @@ def test_encode_commands() -> None:
 def test_encode_rejects_unknown(key: str, value: object) -> None:
     with pytest.raises(ValueError):
         encode_command(key, value)
+
+
+def test_decode_status() -> None:
+    assert decode_line("S,1000,7820,142,1") == Status(1000, 7820, 142, True)
+    assert decode_line("S,500,7820,142,0").imu_ready is False
+
+
+@pytest.mark.parametrize("line", ["S,1000,7820,142", "S,1000,7820,142,2", "S,x,7820,142,1"])
+def test_malformed_status_returns_none(line: str) -> None:
+    assert decode_line(line) is None

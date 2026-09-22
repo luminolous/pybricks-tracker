@@ -11,6 +11,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from app.core.analysis import DRIFT_TESTS
 from app.core.config import MOTOR_ROLES, PortAssignment, RobotConfig, Role
 from app.core.protocol import PROTO_VERSION
 
@@ -22,9 +23,10 @@ BUILD_DIR = Path(__file__).resolve().parents[2] / "build"
 LOOP_MS = 10
 WATCHDOG_MS = 2000  # protocol.md: stop after 2 s without any command
 T_EVERY_LOOPS = 5  # 10 ms loop -> T at 20 Hz
+S_EVERY_LOOPS = 100  # S at 1 Hz
 DISTANCE_EVERY_LOOPS = 10  # ultrasonic at 10 Hz (hub-programs.md)
 
-MODES = ("line_follower",)
+MODES = ("line_follower", "drift_test")
 
 
 class GeneratorError(ValueError):
@@ -56,10 +58,18 @@ def _environment() -> Environment:
     )
 
 
-def render(config: RobotConfig, mode: str) -> str:
-    """Render the hub program for `mode` as MicroPython source text."""
+def render(config: RobotConfig, mode: str, drift: str | None = None) -> str:
+    """Render the hub program for `mode` as MicroPython source text.
+
+    `drift` picks the test for mode "drift_test" (a key of DRIFT_TESTS).
+    """
     if mode not in MODES:
         raise GeneratorError(f"Unknown program mode {mode!r}.")
+    drift_test = None
+    if mode == "drift_test":
+        if drift not in DRIFT_TESTS:
+            raise GeneratorError(f"Unknown drift test {drift!r}.")
+        drift_test = DRIFT_TESTS[drift]
     left = _device(config.port_for(Role.WHEEL_LEFT))
     right = _device(config.port_for(Role.WHEEL_RIGHT))
     if left is None or right is None:
@@ -84,14 +94,19 @@ def render(config: RobotConfig, mode: str) -> str:
         "loop_ms": LOOP_MS,
         "watchdog_ms": WATCHDOG_MS,
         "t_every": T_EVERY_LOOPS,
+        "s_every": S_EVERY_LOOPS,
+        "use_gyro": drift_test.use_gyro if drift_test else True,
+        "drift": drift_test,
         "distance_every": DISTANCE_EVERY_LOOPS,
     }
     return _environment().get_template(f"{mode}.py.j2").render(context)
 
 
-def generate(config: RobotConfig, mode: str, out_dir: Path = BUILD_DIR) -> Path:
+def generate(
+    config: RobotConfig, mode: str, out_dir: Path = BUILD_DIR, drift: str | None = None
+) -> Path:
     """Render and write the program. The file is kept so hub line numbers can be traced."""
-    source = render(config, mode)
+    source = render(config, mode, drift=drift)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"hub_{mode}.py"
     path.write_text(source, encoding="utf-8")

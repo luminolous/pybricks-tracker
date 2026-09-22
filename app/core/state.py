@@ -8,7 +8,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.core.protocol import PORT_LETTERS, DeviceType, PortInfo, PortScanDone, device_type
+from app.core.protocol import (
+    PORT_LETTERS,
+    DeviceType,
+    PortInfo,
+    PortScanDone,
+    Status,
+    Telemetry,
+    device_type,
+)
 
 
 @dataclass
@@ -73,3 +81,61 @@ class TelemetryWatch:
 
     def lost(self, now_s: float) -> bool:
         return self.armed and self.silence_s(now_s) >= self.timeout_s
+
+
+MAX_TRAIL_POINTS = 36_000  # 30 minutes of T at 20 Hz
+
+
+@dataclass(frozen=True)
+class Pose:
+    t_ms: int
+    x_mm: float
+    y_mm: float
+    heading_deg: float
+
+
+class RobotState:
+    """Live pose, trail and hub status, fed by decoded records.
+
+    The trail only grows once the IMU reports ready: heading is meaningless
+    before that (protocol.md, S line). `version` changes whenever something
+    drawable changed, so the UI can skip redraws.
+    """
+
+    def __init__(self, max_points: int = MAX_TRAIL_POINTS) -> None:
+        self.max_points = max_points
+        self.trail: list[Pose] = []
+        self.pose: Pose | None = None
+        self.imu_ready = False
+        self.battery_mv: int | None = None
+        self.version = 0
+
+    def reset(self) -> None:
+        """New run: forget the trail and the IMU state, keep the battery reading."""
+        self.trail.clear()
+        self.pose = None
+        self.imu_ready = False
+        self.version += 1
+
+    def reset_origin(self) -> None:
+        """The hub moved its origin (ORG): the old trail is in another frame."""
+        self.trail.clear()
+        self.version += 1
+
+    def apply(self, record: object) -> bool:
+        """Apply a decoded record. Returns True when it changed the state."""
+        if isinstance(record, Status):
+            self.imu_ready = record.imu_ready
+            self.battery_mv = record.battery_mv
+            self.version += 1
+            return True
+        if isinstance(record, Telemetry):
+            pose = Pose(record.t_ms, record.x_mm, record.y_mm, record.heading_deg)
+            self.pose = pose
+            if self.imu_ready:
+                self.trail.append(pose)
+                if len(self.trail) > self.max_points:
+                    del self.trail[: len(self.trail) - self.max_points]
+            self.version += 1
+            return True
+        return False

@@ -36,12 +36,14 @@ from PySide6.QtWidgets import (
 from app.codegen.generator import SCAN_PORTS_PROGRAM, GeneratorError, generate
 from app.core.config import CONFIGS_DIR, ConfigError, RobotConfig, RobotGeometry
 from app.core.connection import HubConnection, HubConnectionError, LinkState, run_heartbeat
-from app.core.protocol import Event, Ready, Telemetry, decode_line, encode_command
-from app.core.state import PortScan, TelemetryWatch
+from app.core.protocol import Event, Ready, Status, Telemetry, decode_line, encode_command
+from app.core.state import PortScan, RobotState, TelemetryWatch
 from app.ui.code_preview import CodePreview
 from app.ui.console_pane import ConsolePane
 from app.ui.dialogs.connect import ConnectDialog
+from app.ui.dialogs.drift_test import DriftTestDialog
 from app.ui.link_banner import LinkBanner
+from app.ui.map_view import MapView
 from app.ui.port_panel import PortPanel
 from app.ui.theme import caption, label, set_prop
 
@@ -55,6 +57,7 @@ LEFT_COL_PX = 276  # mockup had 252; port rows need the extra room at real font 
 RIGHT_COL_PX = 340
 SCAN_TIMEOUT_S = 10.0
 HANDSHAKE_TIMEOUT_S = 5.0  # upload done -> R line; longer means the program crashed
+DRAIN_GRACE_S = 0.3  # let queued stdout lines land after a program ends
 READOUT_REFRESH_MS = 33  # ~30 fps; widgets never redraw per incoming line
 STATE_TONES = {
     "FOLLOW": "accent",
@@ -82,6 +85,13 @@ def _spin(low: float, high: float, decimals: int, suffix: str = "") -> QDoubleSp
     spin.setSuffix(suffix)
     spin.setAlignment(Qt.AlignmentFlag.AlignRight)
     return spin
+
+
+def _tool_button(text: str, tip: str) -> QPushButton:
+    button = QPushButton(text)
+    button.setProperty("role", "tool")
+    button.setToolTip(tip)
+    return button
 
 
 def _segment(*widgets: QWidget, width: int | None = None) -> QFrame:
@@ -124,6 +134,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._clock = clock
         self._watch = TelemetryWatch()
+        self.state = RobotState()
+        self._current_mode: str | None = None
+        self._drift_dialog: DriftTestDialog | None = None
         self._dropped_at: float | None = None  # BLE lost while a program ran
         self._banner_dismissed = False
         self.setWindowTitle(APP_NAME)
@@ -171,6 +184,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F5"), self, activated=self._run_clicked)
         QShortcut(QKeySequence("Ctrl+U"), self, activated=self.show_code_preview)
         QShortcut(QKeySequence("Ctrl+P"), self, activated=self._scan_clicked)
+        QShortcut(QKeySequence("Ctrl+D"), self, activated=self.show_drift_test)
         QShortcut(QKeySequence("Esc"), self, activated=self._stop_clicked)
         app = QApplication.instance()
         if app is not None:
@@ -293,15 +307,17 @@ class MainWindow(QMainWindow):
         self.scan_button = _action_button("Scan ports", "Ctrl+P")
         self.scan_button.clicked.connect(self._scan_clicked)
         box.addWidget(self.scan_button)
-        for text, key, milestone in (
-            ("Calibrate sensor", "Ctrl+K", "M6"),
-            ("Drift test", "Ctrl+D", "M4"),
-            ("Export run", "Ctrl+E", "M8"),
-        ):
-            button = _action_button(text, key)
-            button.setEnabled(False)
-            button.setToolTip(f"Arrives in {milestone}")
-            box.addWidget(button)
+        calibrate = _action_button("Calibrate sensor", "Ctrl+K")
+        calibrate.setEnabled(False)
+        calibrate.setToolTip("Arrives in M6")
+        box.addWidget(calibrate)
+        self.drift_button = _action_button("Drift test", "Ctrl+D")
+        self.drift_button.clicked.connect(self.show_drift_test)
+        box.addWidget(self.drift_button)
+        export = _action_button("Export run", "Ctrl+E")
+        export.setEnabled(False)
+        export.setToolTip("Arrives in M8")
+        box.addWidget(export)
         self.code_button = _action_button("Hub program", "Ctrl+U")
         self.code_button.clicked.connect(self.show_code_preview)
         box.addWidget(self.code_button)
@@ -315,13 +331,8 @@ class MainWindow(QMainWindow):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(0)
 
-        tape = _frame("tape")
-        tape.setFixedHeight(30)
-        canvas = _frame("mapCanvas")
-        canvas_layout = QVBoxLayout(canvas)
-        hint = label("Map · trail, robot and events arrive in M4", tone="dim")
-        hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        canvas_layout.addWidget(hint)
+        self.map = MapView()
+        self.map.follow_changed.connect(self._follow_changed)
 
         readout = _frame("readout")
         readout.setFixedHeight(66)
@@ -347,18 +358,33 @@ class MainWindow(QMainWindow):
         tools.setFixedWidth(64)
         tools_layout = QVBoxLayout(tools)
         tools_layout.setContentsMargins(0, 12, 0, 12)
-        tools_layout.setSpacing(18)
-        for text in ("Fit", "Follow", "Origin", "Grid", "Trail", "Overlay"):
-            t = label(text, tone="dim")
+        tools_layout.setSpacing(4)
+        self.fit_button = _tool_button("Fit", "Fit the whole trail in view")
+        self.fit_button.clicked.connect(lambda: self.map.fit(self.state))
+        self.follow_button = _tool_button("Follow", "Keep the robot centred")
+        self.follow_button.setCheckable(True)
+        self.follow_button.setChecked(True)
+        self.follow_button.toggled.connect(self.map.set_follow)
+        self.origin_button = _tool_button("Origin", "Make the current pose the new origin")
+        self.origin_button.clicked.connect(self._origin_clicked)
+        for button in (self.fit_button, self.follow_button, self.origin_button):
+            tools_layout.addWidget(button)
+        tools_layout.addSpacing(14)
+        for text, value, tip in (
+            ("Grid", "10cm", ""),
+            ("Trail", "plain", "More trail modes arrive in M8"),
+            ("Overlay", "0", "Run overlays arrive in M8"),
+        ):
+            t = label(f"{text}\n{value}", tone="dim")
             t.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            t.setToolTip(tip)
             tools_layout.addWidget(t)
         tools_layout.addStretch()
 
-        grid.addWidget(tape, 0, 0)
-        grid.addWidget(canvas, 1, 0)
-        grid.addWidget(readout, 2, 0)
-        grid.addWidget(tools, 0, 1, 3, 1)
-        grid.setRowStretch(1, 1)
+        grid.addWidget(self.map, 0, 0)
+        grid.addWidget(readout, 1, 0)
+        grid.addWidget(tools, 0, 1, 2, 1)
+        grid.setRowStretch(0, 1)
         return wrap
 
     def _build_right(self) -> QFrame:
@@ -513,17 +539,18 @@ class MainWindow(QMainWindow):
             return "A program is running. Stop it first."
         return self.port_panel.validation_error()
 
-    async def run_program(self, mode: str = "line_follower") -> bool:
+    async def run_program(self, mode: str = "line_follower", drift: str | None = None) -> bool:
         """Render, upload and start `mode`, then wait for its R handshake."""
         blocker = self.run_blocker()
         if blocker:
             self.note(blocker)
             return False
         try:
-            path = generate(self.current_config(), mode)
+            path = generate(self.current_config(), mode, drift=drift)
         except GeneratorError as exc:
             self.note(str(exc))
             return False
+        self._current_mode = mode
         self._ready = None
         self._ready_event.clear()
         self.note(f"uploading {path}")
@@ -577,6 +604,42 @@ class MainWindow(QMainWindow):
         self._preview.show()
         self._preview.raise_()
 
+    def show_drift_test(self) -> None:
+        if self._drift_dialog is None:
+            self._drift_dialog = DriftTestDialog(
+                run=lambda key: self.run_program("drift_test", drift=key),
+                config=self.current_config,
+                apply_geometry=self.apply_geometry,
+                parent=self,
+            )
+        self._drift_dialog.show()
+        self._drift_dialog.raise_()
+
+    def apply_geometry(self, geometry: RobotGeometry) -> None:
+        for key, spin in self.geometry_fields.items():
+            spin.setValue(getattr(geometry, key))
+        self.note(
+            f"geometry set: wheel {geometry.wheel_diameter_mm} mm, axle {geometry.axle_track_mm} mm"
+        )
+
+    async def _finish_drift_test(self) -> None:
+        # The final T line can still sit in the queue when the running flag
+        # drops; let the drain catch up before reading the final pose.
+        await asyncio.sleep(DRAIN_GRACE_S)
+        while not self.conn.lines.empty():
+            await asyncio.sleep(0.01)
+        if self._drift_dialog is not None:
+            self._drift_dialog.program_finished(self.state.pose)
+
+    def _origin_clicked(self) -> None:
+        if self.conn.program_running:
+            self._spawn(self.conn.write_line(encode_command("ORG")))
+        self.state.reset_origin()
+        self.note("origin reset")
+
+    def _follow_changed(self, on: bool) -> None:
+        self.follow_button.setChecked(on)
+
     def note(self, text: str) -> None:
         self.console.append(NOTE_PREFIX + text)
 
@@ -588,7 +651,10 @@ class MainWindow(QMainWindow):
             self._handle_record(decode_line(line))
 
     def _handle_record(self, record: object) -> None:
-        if isinstance(record, Telemetry):
+        if isinstance(record, Status):
+            self.state.apply(record)
+        elif isinstance(record, Telemetry):
+            self.state.apply(record)
             self._latest_t = record
             self._watch.saw_telemetry(self._clock())
             self._banner_dismissed = False
@@ -603,6 +669,9 @@ class MainWindow(QMainWindow):
                 self._ready_event.set()
                 self._watch.arm(self._clock())
                 self._dropped_at = None
+                self.state.reset()
+                self.map.clear()
+                self.follow_button.setChecked(True)
         elif isinstance(record, Event):
             if record.kind == "WDOG":
                 self.note(f"Hub watchdog stopped the robot: no command for {record.detail} ms.")
@@ -614,6 +683,10 @@ class MainWindow(QMainWindow):
 
     def _tick_ui(self) -> None:
         self._refresh_readouts()
+        self.map.sensor_offset_mm = self.geometry_fields["sensor_offset_mm"].value()
+        self.map.refresh(self.state)
+        if self.state.battery_mv is not None:
+            self.battery_label.setText(f"{self.state.battery_mv / 1000:.2f} V")
         self._check_link()
 
     def _check_link(self) -> None:
@@ -751,6 +824,9 @@ class MainWindow(QMainWindow):
             self.mode_label.setText("")
             self._watch.disarm()  # program ended; a BLE drop was handled first
             self._check_link()
+            if self._current_mode == "drift_test":
+                self._spawn(self._finish_drift_test())
+            self._current_mode = None
         self._update_actions()
 
     def _update_actions(self) -> None:

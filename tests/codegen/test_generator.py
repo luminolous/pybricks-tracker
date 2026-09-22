@@ -26,9 +26,11 @@ def source() -> str:
     return render(DEFAULT, "line_follower")
 
 
-def main_loop(source: str) -> str:
-    start = source.index("def main():")
-    return source[start : source.index("\nmain()", start)]
+def function(source: str, name: str) -> str:
+    """Source of one top-level function in the rendered program."""
+    start = source.index(f"\ndef {name}(") + 1
+    end = source.find("\n\n\n", start)
+    return source[start : end if end != -1 else len(source)]
 
 
 async def test_compiles_with_mpy_cross(tmp_path: Path) -> None:
@@ -62,23 +64,42 @@ def test_proto_version_matches_app(source: str) -> None:
     assert f"PROTO_VERSION = {PROTO_VERSION}\n" in source
 
 
-def test_handshake_before_loop_and_watchdog_every_iteration(source: str) -> None:
-    loop = main_loop(source)
-    assert loop.index('print("R,{},{}".format(MODE, PROTO_VERSION))') < loop.index("while True:")
+def test_handshake_first_then_imu_wait_then_loop(source: str) -> None:
+    main = function(source, "main")
+    order = [
+        main.index('print("R,{},{}".format(MODE, PROTO_VERSION))'),
+        main.index("wait_for_imu()"),
+        main.index("reset_origin()"),
+        main.index("run_loop()"),
+    ]
+    assert order == sorted(order)
+
+
+def test_watchdog_checked_every_iteration(source: str) -> None:
+    loop = function(source, "run_loop")
     body = loop[loop.index("while True:") :]
-    assert "if not watchdog_ok():" in body
     assert body.index("check_commands()") < body.index("if not watchdog_ok():")
     assert body.index("if not watchdog_ok():") < body.index("control_step(n, refl)")
-
-
-def test_watchdog_stops_drivebase_emits_once_and_ends(source: str) -> None:
-    body = main_loop(source)
     trip = body[body.index("if not watchdog_ok():") :]
-    trip = trip[: trip.index("break") + len("break")]
+    assert trip.split("\n")[1].strip() == "trip_watchdog()"
+    assert trip.split("\n")[2].strip() == "break"
+
+
+def test_watchdog_trip_stops_drivebase_and_emits_once(source: str) -> None:
+    trip = function(source, "trip_watchdog")
     assert "robot.stop()" in trip
     assert 'emit_e("WDOG", _last_rx.time())' in trip
     assert source.count('emit_e("WDOG"') == 1
     assert "WATCHDOG_MS = 2000" in source
+
+
+def test_imu_wait_keeps_serving_commands_and_watchdog(source: str) -> None:
+    wait = function(source, "wait_for_imu")
+    assert "while not hub.imu.ready():" in wait
+    assert "check_commands()" in wait
+    assert "trip_watchdog()" in wait
+    assert "emit_s()" in wait
+    assert "emit_t" not in wait  # no T before the IMU is ready (protocol.md)
 
 
 def test_commands_reset_watchdog_clock(source: str) -> None:
@@ -131,3 +152,30 @@ def test_generate_keeps_file_on_disk(tmp_path: Path) -> None:
     path = generate(DEFAULT, "line_follower", out_dir=tmp_path)
     assert path == tmp_path / "hub_line_follower.py"
     assert path.read_text(encoding="utf-8") == render(DEFAULT, "line_follower")
+
+
+@pytest.mark.parametrize("drift", ["straight", "turns", "square"])
+async def test_drift_tests_compile(tmp_path: Path, drift: str) -> None:
+    path = generate(DEFAULT, "drift_test", out_dir=tmp_path, drift=drift)
+    assert len(await compile_file(str(tmp_path), path.name, 6)) > 0
+
+
+def test_turn_test_runs_with_gyro_off() -> None:
+    assert "robot.use_gyro(False)" in render(DEFAULT, "drift_test", drift="turns")
+    assert "robot.use_gyro(True)" in render(DEFAULT, "drift_test", drift="straight")
+
+
+def test_square_renders_four_sides() -> None:
+    source = render(DEFAULT, "drift_test", drift="square")
+    assert source.count('("S", 500),') == 4
+    assert source.count('("T", 90),') == 4
+    assert "robot.straight(amount, wait=False)" in source
+
+
+def test_drift_test_needs_no_line_sensor() -> None:
+    assert "MOVES" in render(without(Role.LINE_SENSOR), "drift_test", drift="straight")
+
+
+def test_unknown_drift_test_raises() -> None:
+    with pytest.raises(GeneratorError, match="Unknown drift test"):
+        render(DEFAULT, "drift_test", drift="figure8")

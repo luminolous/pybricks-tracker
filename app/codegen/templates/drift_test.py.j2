@@ -1,0 +1,45 @@
+{% extends "_base.py.j2" %}
+{% block control %}
+# Drift test: {{ drift.label }}.
+# Moves run with wait=False, so the base loop keeps serving commands, the
+# watchdog and telemetry while the robot drives. The final T line (state
+# STOP) is the odometry estimate the app compares with the measured result.
+
+MOVES = (
+{% for kind, amount in drift.moves %}
+    ("{{ kind }}", {{ amount }}),
+{% endfor %}
+)
+STRAIGHT_SPEED = 150  # mm/s, slow for repeatable wheel slip
+TURN_RATE = 90  # deg/s
+
+_move = -1
+
+
+def setup():
+    global STATE
+    robot.settings(straight_speed=STRAIGHT_SPEED, turn_rate=TURN_RATE)
+    STATE = "TEST"
+    start_next()
+
+
+def start_next():
+    global _move, STOPPED
+    _move += 1
+    if _move >= len(MOVES):
+        STOPPED = True
+        return
+    kind, amount = MOVES[_move]
+    if kind == "S":
+        robot.straight(amount, wait=False)
+    else:
+        robot.turn(amount, wait=False)
+
+
+def control_step(n, refl):
+    global STATE, STEER
+    STATE = "TEST"
+    STEER = 0
+    if robot.done():
+        start_next()
+{% endblock %}

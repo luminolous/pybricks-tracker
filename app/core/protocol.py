@@ -3,7 +3,7 @@
 Authoritative spec: .claude/docs/protocol.md. This module and the hub
 templates both implement it; change the spec first.
 
-Decodes `P`, `R`, `T` and `E`. `D` and `S` arrive with M5. Anything
+Decodes `P`, `R`, `T`, `E` and `S`. `D` arrives with M5. Anything
 unrecognised decodes to None and belongs in the console, never in an
 exception.
 """
@@ -105,6 +105,16 @@ class Telemetry:
     state: str
 
 
+@dataclass(frozen=True)
+class Status:
+    """`S,<t_ms>,<battery_mv>,<battery_ma>,<imu_ready>`"""
+
+    t_ms: int
+    battery_mv: int
+    battery_ma: int
+    imu_ready: bool
+
+
 EVENT_KINDS = frozenset({"LOST", "FOUND", "GIVEUP", "OBS", "STALL", "BUMP", "LAP", "WDOG"})
 
 
@@ -119,7 +129,7 @@ class Event:
     detail: str | None = None
 
 
-Record = PortInfo | PortScanDone | Ready | Telemetry | Event
+Record = PortInfo | PortScanDone | Ready | Telemetry | Event | Status
 
 
 def decode_line(line: str) -> Record | None:
@@ -137,6 +147,8 @@ def decode_line(line: str) -> Record | None:
             return _decode_telemetry(fields)
         if prefix == "E":
             return _decode_event(fields)
+        if prefix == "S":
+            return _decode_status(fields)
     except (IndexError, ValueError):
         return None
     return None
@@ -154,6 +166,18 @@ def _decode_telemetry(fields: list[str]) -> Telemetry | None:
         reflection=int(fields[4]),
         steer=int(fields[5]),
         state=state,
+    )
+
+
+def _decode_status(fields: list[str]) -> Status | None:
+    imu = fields[3]
+    if imu not in ("0", "1"):
+        return None
+    return Status(
+        t_ms=int(fields[0]),
+        battery_mv=int(fields[1]),
+        battery_ma=int(fields[2]),
+        imu_ready=imu == "1",
     )
 
 

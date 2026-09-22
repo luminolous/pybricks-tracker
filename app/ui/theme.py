@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,8 +39,9 @@ class Fonts:
     mono: str
 
 
+@functools.cache
 def load_fonts() -> Fonts:
-    """Register bundled fonts from app/ui/fonts, then pick the best available family."""
+    """Register bundled fonts from app/ui/fonts once, then pick the best available family."""
     if FONT_DIR.is_dir():
         for path in sorted(FONT_DIR.glob("*.[ot]tf")):
             QFontDatabase.addApplicationFont(str(path))
@@ -101,6 +103,13 @@ QPushButton[role="run"] {{
 QPushButton[role="run"]:disabled {{ background: transparent; border-color: {LINE}; color: {DIM}; }}
 QPushButton[role="small"] {{
     padding: 3px 8px; color: {MUTED}; border-color: {LINE_STRONG}; text-align: center;
+}}
+QPushButton[role="tool"] {{
+    border: 1px solid transparent; color: {MUTED}; padding: 8px 0; text-align: center;
+    font-size: 11px;
+}}
+QPushButton[role="tool"]:checked {{
+    color: {ACCENT}; border-color: rgba(63, 208, 230, 110); background: {ACCENT_DIM};
 }}
 QPushButton[role="estop"] {{
     background: {DANGER}; border: 0; color: #FFFFFF; font-weight: 600; font-size: 13px;

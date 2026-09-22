@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.core.protocol import DeviceKind, Ready, decode_line
-from app.core.state import PortScan, TelemetryWatch
+from app.core.state import PortScan, Pose, RobotState, TelemetryWatch
 
 SCAN_OUTPUT = ["R,SCAN,1", "P,A,0", "P,B,0", "P,C,48", "P,D,61", "P,E,62", "P,F,48", "P,DONE,0"]
 
@@ -72,3 +72,49 @@ def test_disarmed_watch_never_trips() -> None:
     watch.arm(0.0)
     watch.disarm()
     assert not watch.lost(60.0)
+
+
+# -- RobotState ---------------------------------------------------------------
+
+
+def feed(state: RobotState, *lines: str) -> None:
+    for line in lines:
+        state.apply(decode_line(line))
+
+
+def test_trail_waits_for_imu_ready() -> None:
+    state = RobotState()
+    feed(state, "S,0,7800,150,0", "T,50,0.0,0.0,0.0,50,0,IDLE")
+    assert state.trail == []
+    assert state.pose == Pose(50, 0.0, 0.0, 0.0)
+    feed(state, "S,600,7800,150,1", "T,650,10.0,2.0,5.0,50,0,FOLLOW")
+    assert state.trail == [Pose(650, 10.0, 2.0, 5.0)]
+    assert state.battery_mv == 7800
+
+
+def test_version_moves_on_every_change() -> None:
+    state = RobotState()
+    v0 = state.version
+    feed(state, "S,0,7800,150,1")
+    feed(state, "T,50,1.0,0.0,0.0,50,0,FOLLOW")
+    assert state.version == v0 + 2
+    assert not state.apply(decode_line("P,A,0"))
+    assert state.version == v0 + 2
+
+
+def test_reset_and_reset_origin() -> None:
+    state = RobotState()
+    feed(state, "S,0,7800,150,1", "T,50,1.0,0.0,0.0,50,0,FOLLOW")
+    state.reset_origin()
+    assert state.trail == [] and state.imu_ready
+    state.reset()
+    assert state.pose is None and not state.imu_ready
+    assert state.battery_mv == 7800  # battery survives a new run
+
+
+def test_trail_is_capped() -> None:
+    state = RobotState(max_points=3)
+    feed(state, "S,0,7800,150,1")
+    for i in range(5):
+        feed(state, f"T,{i},{i}.0,0.0,0.0,50,0,FOLLOW")
+    assert [p.x_mm for p in state.trail] == [2.0, 3.0, 4.0]
