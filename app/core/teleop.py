@@ -16,7 +16,10 @@ from app.core.protocol import encode_drive
 logger = logging.getLogger(__name__)
 
 SEND_INTERVAL_S = 0.1  # well inside the hub's 300 ms dead-man timeout
-TURN_RATE_DEG_S = 90
+# Own speeds, not the line follower's SPD: 50 mm/s felt sluggish on the real
+# robot (2026-09-23). The hub still clamps to 300 mm/s and 180 deg/s.
+TELEOP_SPEED_MM_S = 150.0
+TURN_RATE_DEG_S = 120
 DRIVE_KEYS = frozenset("WASD")
 
 
@@ -24,7 +27,7 @@ class TeleopDriver:
     def __init__(self, send: Callable[[str], Awaitable[None]]) -> None:
         self._send = send
         self.keys: set[str] = set()
-        self.speed_mm_s = 100.0
+        self.speed_mm_s = TELEOP_SPEED_MM_S
         self._last_sent: tuple[float, float] | None = None
 
     def press(self, key: str) -> bool:

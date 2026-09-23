@@ -725,7 +725,6 @@ class MainWindow(QMainWindow):
             self.note(blocker)
             return
         self.teleop.reset()
-        self.teleop.speed_mm_s = self.tuning.rows["SPD"].value()
         self._spawn(self._start_teleop())
 
     async def _start_teleop(self) -> None:
@@ -1072,7 +1071,8 @@ class MainWindow(QMainWindow):
         self._show_rec_label()
         if view.battery_mv is not None:
             self.battery_label.setText(f"{view.battery_mv / 1000:.2f} V")
-        self.battery_gauge.set_voltage(view.battery_mv)
+        live_battery = self.conn.battery if self._replay is None else None
+        self.battery_gauge.set_state(live_battery, view.battery_mv)
         self._show_loop_dt()
         if self._calibration_dialog is not None and self._calibration_dialog.isVisible():
             self._calibration_dialog.show_live(self.state.reflection)

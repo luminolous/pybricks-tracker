@@ -56,7 +56,7 @@ Scan to detect what is plugged into each port, assign roles, then click Run.
 | Ctrl+P | Scan ports |
 | Ctrl+K | Calibrate the line sensor (black, then white) |
 | Ctrl+D | Drift test |
-| Ctrl+T | Teleop; then W A S D drive, the SPD slider sets the speed |
+| Ctrl+T | Teleop; then W A S D drive (150 mm/s, 120 deg/s turns) |
 | Ctrl+O | Replay a recorded run |
 | Ctrl+E | Export the map (PNG), telemetry (CSV) or session (JSONL) |
 | Ctrl+U | Show the generated hub program |

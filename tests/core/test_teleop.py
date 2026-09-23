@@ -51,7 +51,7 @@ async def test_release_all_on_focus_loss() -> None:
     await d.tick()
     d.release_all()
     await d.tick()
-    assert sent == ["DRV,0,-90", "DRV,0,0"]
+    assert sent == [f"DRV,0,{-TURN_RATE_DEG_S}", "DRV,0,0"]
 
 
 async def test_failed_write_is_retried_next_tick() -> None:
@@ -65,4 +65,4 @@ async def test_failed_write_is_retried_next_tick() -> None:
     d = TeleopDriver(flaky)
     d.press("W")
     assert await d.tick() is None
-    assert await d.tick() == "DRV,100,0"
+    assert await d.tick() == "DRV,150,0"

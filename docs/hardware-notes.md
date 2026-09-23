@@ -97,3 +97,19 @@ Robot held by hand, calibrate program streaming, in the app.
 - Header: battery 7.14 V, loop 10 ms (calibrate program, all telemetry on).
 - No battery gauge in the header, only text: the approved mockup has one.
   Added.
+
+## 2026-09-23 — stage 3 (part 1): teleop, wheels lifted
+
+Robot on a box, wheels free, teleop from the app.
+
+- W and S move the map trail forward and back: the encoder distance counts
+  even with the wheels in the air.
+- A and D spin the wheels but the map marker does not turn. Expected: heading
+  comes from the gyro and the body does not rotate on a box. Turning is only
+  visible on the floor (stage 4).
+- Teleop at the line follower's 50 mm/s felt too slow. Teleop now has its own
+  150 mm/s and 120 deg/s (hub clamps stay 300 mm/s, 180 deg/s).
+- The header battery gauge (linear 6.8-8.3 V guess) showed ~23 % at 7.12 V
+  while Pybricks Code showed a healthy pack. Replaced by the hub's own
+  low-voltage status flags, as Pybricks Code does; the voltage stays as text.
+- Map marker (110 mm long) felt too big; now 65 mm.

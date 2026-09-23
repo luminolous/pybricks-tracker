@@ -181,6 +181,9 @@ class HubConnection:
         self._splitter = LineSplitter()
         self._link_state = LinkState.DISCONNECTED
         self._program_running = False
+        # From the hub's status flags, as Pybricks Code shows it: "ok", "low",
+        # "critical", or None before the first status report.
+        self.battery: str | None = None
         self.hub_name: str | None = None
         self.lines: asyncio.Queue[str] = asyncio.Queue()
 
@@ -287,6 +290,7 @@ class HubConnection:
         self._splitter.reset()
         # Link state first: listeners must see "disconnected while running",
         # not a program that ended normally.
+        self.battery = None
         self._set_link_state(LinkState.DISCONNECTED)
         self._set_program_running(False)
 
@@ -295,6 +299,12 @@ class HubConnection:
             self.lines.put_nowait(line)
 
     def _handle_status(self, flags: StatusFlag) -> None:
+        if flags & StatusFlag.BATTERY_LOW_VOLTAGE_SHUTDOWN:
+            self.battery = "critical"
+        elif flags & StatusFlag.BATTERY_LOW_VOLTAGE_WARNING:
+            self.battery = "low"
+        else:
+            self.battery = "ok"
         self._set_program_running(bool(flags & StatusFlag.USER_PROGRAM_RUNNING))
 
     def _handle_connection_state(self, state: ConnectionState) -> None:
