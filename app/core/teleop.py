@@ -11,15 +11,12 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
+from app.core.config import MAX_SPEED_MM_S, TuningParams, turn_rate_deg_s
 from app.core.protocol import encode_drive
 
 logger = logging.getLogger(__name__)
 
 SEND_INTERVAL_S = 0.1  # well inside the hub's 300 ms dead-man timeout
-# Own speeds, not the line follower's SPD: 50 mm/s felt sluggish on the real
-# robot (2026-09-23). The hub still clamps to 300 mm/s and 180 deg/s.
-TELEOP_SPEED_MM_S = 150.0
-TURN_RATE_DEG_S = 120
 DRIVE_KEYS = frozenset("WASD")
 
 
@@ -27,7 +24,8 @@ class TeleopDriver:
     def __init__(self, send: Callable[[str], Awaitable[None]]) -> None:
         self._send = send
         self.keys: set[str] = set()
-        self.speed_mm_s = TELEOP_SPEED_MM_S
+        # SPD from the tuning panel, the same speed the line follower drives at.
+        self.speed_mm_s = TuningParams().base_speed_mm_s
         self._last_sent: tuple[float, float] | None = None
 
     def press(self, key: str) -> bool:
@@ -51,7 +49,8 @@ class TeleopDriver:
     def setpoint(self) -> tuple[float, float]:
         forward = ("W" in self.keys) - ("S" in self.keys)
         right = ("D" in self.keys) - ("A" in self.keys)
-        return forward * self.speed_mm_s, right * TURN_RATE_DEG_S
+        speed = min(MAX_SPEED_MM_S, abs(self.speed_mm_s))
+        return forward * speed, right * turn_rate_deg_s(speed)
 
     async def tick(self) -> str | None:
         """Send the setpoint if it moves the robot or just returned to rest."""

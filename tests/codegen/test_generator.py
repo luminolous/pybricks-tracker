@@ -236,7 +236,7 @@ def test_drive_setpoint_is_clamped_on_the_hub(source: str) -> None:
     assert 'elif key == "DRV":' in check
     assert "max(-DRV_MAX_SPEED, min(DRV_MAX_SPEED, float(speed)))" in check
     assert "_drv_timer.reset()" in check
-    assert "DRV_MAX_SPEED = 300" in source and "DRV_MAX_TURN = 180" in source
+    assert "DRV_MAX_SPEED = 300" in source and "DRV_MAX_TURN = 360" in source
 
 
 def test_teleop_has_a_dead_man_and_obstacle_stop() -> None:
@@ -263,8 +263,8 @@ def test_original_constants(source: str) -> None:
         "KD = -5.0",
         "BASE_SPEED = 50.0",
         "OBSTACLE_MM = 50",
-        "PIVOT_RATE = 180",
-        "SEARCH_RATE = 150",
+        "PIVOT_PER_MM = 3.6",  # 180 deg/s at 50 mm/s, as the original
+        "SEARCH_PER_MM = 3.0",  # 150 deg/s at 50 mm/s
         "LOST_MS = 150",
         "SEARCH_DEG = 120",
         "BACKUP_MM = 20",
@@ -272,6 +272,12 @@ def test_original_constants(source: str) -> None:
         "WHITE_ABOVE = (WHITE + EDGE) // 2",
     ):
         assert re.search(rf"^{re.escape(line)}\b", source, re.MULTILINE), line
+
+
+def test_turn_rates_follow_live_spd(source: str) -> None:
+    """SPD changes pivot and search too, not only straight following."""
+    assert "return min(MAX_TURN, abs(BASE_SPEED) * per_mm)" in function(source, "turn_rate")
+    assert "STEER = _search_dir * turn_rate(SEARCH_PER_MM)" in function(source, "search_step")
 
 
 def test_search_backs_up_then_sweeps_by_angle(source: str) -> None:
@@ -289,7 +295,7 @@ def test_search_backs_up_then_sweeps_by_angle(source: str) -> None:
 def test_pivot_and_white_timer_follow_the_original(source: str) -> None:
     control = function(source, "control_step")
     assert "if refl < BLACK_BELOW:" in control
-    assert "STEER = correction_dir(error) * PIVOT_RATE" in control
+    assert "STEER = correction_dir(error) * turn_rate(PIVOT_PER_MM)" in control
     assert "if refl <= WHITE_ABOVE:" in control and "_white_timer.reset()" in control
     assert "elif _white_timer.time() > LOST_MS:" in control
     assert "correction_dir" in function(source, "correction_dir")

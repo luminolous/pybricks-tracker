@@ -119,6 +119,21 @@ class RobotGeometry:
     sensor_offset_mm: float = 40.0  # colour sensor ahead of the wheel axis
 
 
+# One speed for every driving mode: SPD (base_speed_mm_s). Turn rates follow
+# it with the original script's ratios, 180 deg/s pivot and 150 deg/s search
+# at 50 mm/s. Teleop turns at the pivot ratio. The drift test keeps fixed
+# speeds so its measurements stay comparable between runs.
+PIVOT_DEG_PER_MM = 3.6
+SEARCH_DEG_PER_MM = 3.0
+MAX_TURN_DEG_S = 360
+MAX_SPEED_MM_S = 300
+
+
+def turn_rate_deg_s(speed_mm_s: float, deg_per_mm: float = PIVOT_DEG_PER_MM) -> float:
+    """Turn rate that goes with a forward speed, capped at MAX_TURN_DEG_S."""
+    return min(MAX_TURN_DEG_S, abs(speed_mm_s) * deg_per_mm)
+
+
 @dataclass(frozen=True)
 class TuningParams:
     # Defaults from the original hand-written line follower (KECEPATAN, KP, KD, BATAS).

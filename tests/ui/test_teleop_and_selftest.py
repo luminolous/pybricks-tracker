@@ -49,7 +49,19 @@ async def test_drive_button_starts_teleop(window) -> None:
     assert window.fakes.hub.ran[-1].endswith("hub_teleop.py")
     assert window.teleop_active()
     assert window.drive_button.isChecked()
-    assert window.tuning.mode == "off"
+    assert window.tuning.mode == "speed"
+    assert window.tuning.rows["SPD"].slider.isEnabled()
+    assert not window.tuning.rows["KP"].slider.isEnabled()
+
+
+async def test_spd_slider_sets_teleop_speed_live(window) -> None:
+    window.tuning.rows["SPD"].set_value(100)
+    await driving(window)
+    assert window.teleop.speed_mm_s == 100  # taken at start
+    window.tuning.rows["SPD"].set_value(70)
+    key(window, Qt.Key.Key_W)
+    await window.teleop.tick()
+    assert drives(window) == ["DRV,70,0\r\n"]  # changed mid-run, no restart
 
 
 async def test_wasd_sends_drive_commands(window) -> None:

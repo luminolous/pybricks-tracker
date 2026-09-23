@@ -14,8 +14,11 @@ WHITE = {{ calibration.white }}
 EDGE = {{ calibration.edge }}
 BLACK_BELOW = (BLACK + EDGE) // 2  # original: nilai < (hitam + TEPI) / 2
 WHITE_ABOVE = (WHITE + EDGE) // 2  # original: nilai > (putih + TEPI) / 2
-PIVOT_RATE = 180  # deg/s, turn in place on black
-SEARCH_RATE = 150  # deg/s, sweep while looking for a lost line
+# Turn rates follow the live BASE_SPEED (SPD), so one slider sets the pace of
+# every state. Original: 180 deg/s pivot, 150 deg/s search at 50 mm/s.
+PIVOT_PER_MM = {{ pivot_per_mm }}
+SEARCH_PER_MM = {{ search_per_mm }}
+MAX_TURN = {{ max_turn }}
 LOST_MS = 150  # white this long means the line is gone (90 degree corner)
 SEARCH_DEG = 120  # first sweep; the return sweep covers twice this
 BACKUP_MM = 20  # back up before sweeping
@@ -27,6 +30,10 @@ _search_dir = 1
 _sweep_start = 0
 _obstacle = False
 _light = None
+
+
+def turn_rate(per_mm):
+    return min(MAX_TURN, abs(BASE_SPEED) * per_mm)
 
 
 def light(color):
@@ -89,7 +96,7 @@ def search_step(refl):
             hub.speaker.beep(400, 500)
             STOPPED = True
             return
-    STEER = _search_dir * SEARCH_RATE
+    STEER = _search_dir * turn_rate(SEARCH_PER_MM)
     robot.drive(0, STEER)
 
 
@@ -122,7 +129,7 @@ def control_step(n, refl):
         return
 
     if refl < BLACK_BELOW:
-        STEER = correction_dir(error) * PIVOT_RATE
+        STEER = correction_dir(error) * turn_rate(PIVOT_PER_MM)
         STATE = "PIVOT"
         light(Color.RED)
         robot.drive(0, STEER)

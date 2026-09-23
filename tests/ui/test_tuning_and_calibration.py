@@ -74,6 +74,9 @@ def test_modes_enable_and_hint(qapp) -> None:
     for mode, enabled in (("config", True), ("waiting", False), ("live", True), ("off", False)):
         panel.set_mode(mode)
         assert panel.rows["KD"].slider.isEnabled() is enabled
+    panel.set_mode("speed")  # teleop: SPD only
+    assert panel.rows["SPD"].slider.isEnabled()
+    assert not panel.rows["KD"].slider.isEnabled()
 
 
 # -- live flow ----------------------------------------------------------------

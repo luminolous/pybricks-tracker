@@ -667,6 +667,10 @@ class MainWindow(QMainWindow):
     def _start_live_tuning(self, ready: Ready) -> None:
         if not ready.compatible:
             return  # run_program stops it; never send tuning to a mismatched program
+        if ready.mode == "TELEOP":
+            self.teleop.speed_mm_s = self.tuning.rows["SPD"].value()
+            self._set_tuning_mode("speed")  # SPD rides on every DRV; KP/KD unused
+            return
         if ready.mode != "LINE_FOLLOWER":
             self._set_tuning_mode("off")  # drift test and calibration ignore KP/KD/SPD
             return
@@ -679,6 +683,8 @@ class MainWindow(QMainWindow):
     def _tuning_changed(self, key: str, value: float) -> None:
         if self._tuning_live:
             self.tuner.want(key, value)
+        if key == "SPD":
+            self.teleop.speed_mm_s = value  # the next DRV (<= 100 ms) carries it
 
     def show_calibration(self) -> None:
         if self._calibration_dialog is None:

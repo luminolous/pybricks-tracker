@@ -5,6 +5,8 @@ Modes:
 - waiting: a program was started but its R handshake has not arrived; disabled.
 - live: every change goes to the hub (rate limited by TuningSender) and the
   acknowledged value is shown under the control, so a dropped write is visible.
+- speed: teleop runs; only SPD is enabled and it sets the drive speed in the
+  app (DRV carries it), so there is no hub acknowledgement.
 - off: the running program ignores tuning (drift test, calibration); disabled.
 - replay: a recorded run is showing; disabled.
 """
@@ -47,6 +49,7 @@ MODE_HINTS = {
     "config": "sent with Run",
     "waiting": "waiting for the hub",
     "live": "live, no re-upload",
+    "speed": "SPD drives WASD",
     "off": "not used by this program",
     "replay": "disabled during replay",
 }
@@ -144,8 +147,8 @@ class TuningPanel(QFrame):
     def set_mode(self, mode: str) -> None:
         self.mode = mode
         self.hint.setText(MODE_HINTS[mode])
-        enabled = mode in ("config", "live")
         for row in self.rows.values():
+            enabled = mode in ("config", "live") or (mode == "speed" and row.knob.key == "SPD")
             row.slider.setEnabled(enabled)
             row.spin.setEnabled(enabled)
             if mode != "live":

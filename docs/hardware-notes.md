@@ -107,8 +107,12 @@ Robot on a box, wheels free, teleop from the app.
 - A and D spin the wheels but the map marker does not turn. Expected: heading
   comes from the gyro and the body does not rotate on a box. Turning is only
   visible on the floor (stage 4).
-- Teleop at the line follower's 50 mm/s felt too slow. Teleop now has its own
-  150 mm/s and 120 deg/s (hub clamps stay 300 mm/s, 180 deg/s).
+- Teleop at the line follower's 50 mm/s felt too slow. Teleop got its own
+  150 mm/s and 120 deg/s. Later replaced: SPD changes seemed to do nothing
+  because the line follower mostly pivots, and pivot (180 deg/s) and search
+  (150 deg/s) were fixed. Now one SPD slider drives every mode except the
+  drift test: pivot 3.6x SPD, search 3.0x SPD, teleop SPD with 3.6x turns,
+  turns capped at 360 deg/s.
 - The header battery gauge (linear 6.8-8.3 V guess) showed ~23 % at 7.12 V
   while Pybricks Code showed a healthy pack. Replaced by the hub's own
   low-voltage status flags, as Pybricks Code does; the voltage stays as text.

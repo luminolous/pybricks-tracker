@@ -12,7 +12,16 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from app.core.analysis import DRIFT_TESTS
-from app.core.config import MOTOR_ROLES, PortAssignment, RobotConfig, Role
+from app.core.config import (
+    MAX_SPEED_MM_S,
+    MAX_TURN_DEG_S,
+    MOTOR_ROLES,
+    PIVOT_DEG_PER_MM,
+    SEARCH_DEG_PER_MM,
+    PortAssignment,
+    RobotConfig,
+    Role,
+)
 from app.core.protocol import PROTO_VERSION
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -101,6 +110,10 @@ def render(config: RobotConfig, mode: str, drift: str | None = None) -> str:
         "use_gyro": drift_test.use_gyro if drift_test else True,
         "drift": drift_test,
         "distance_every": DISTANCE_EVERY_LOOPS,
+        "max_speed": MAX_SPEED_MM_S,
+        "max_turn": MAX_TURN_DEG_S,
+        "pivot_per_mm": PIVOT_DEG_PER_MM,
+        "search_per_mm": SEARCH_DEG_PER_MM,
     }
     return _environment().get_template(f"{mode}.py.j2").render(context)
 

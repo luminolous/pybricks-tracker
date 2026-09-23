@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from app.core.config import turn_rate_deg_s
 from app.core.protocol import encode_drive
-from app.core.teleop import TURN_RATE_DEG_S, TeleopDriver
+from app.core.teleop import TeleopDriver
+
+TURN = turn_rate_deg_s(120)  # 360 cap: 3.6 * 120 = 432
 
 
 def rig() -> tuple[TeleopDriver, list[str]]:
@@ -27,9 +30,9 @@ def test_keys_to_setpoint() -> None:
     d.press("w")
     assert d.setpoint() == (120, 0)
     d.press("D")
-    assert d.setpoint() == (120, TURN_RATE_DEG_S)  # curve right
+    assert d.setpoint() == (120, TURN)  # curve right
     d.press("S")
-    assert d.setpoint() == (0, TURN_RATE_DEG_S)  # W and S cancel: turn in place
+    assert d.setpoint() == (0, TURN)  # W and S cancel: turn in place
     assert not d.press("Q")  # not a drive key
 
 
@@ -51,7 +54,7 @@ async def test_release_all_on_focus_loss() -> None:
     await d.tick()
     d.release_all()
     await d.tick()
-    assert sent == [f"DRV,0,{-TURN_RATE_DEG_S}", "DRV,0,0"]
+    assert sent == [f"DRV,0,{-TURN}", "DRV,0,0"]
 
 
 async def test_failed_write_is_retried_next_tick() -> None:
@@ -65,4 +68,14 @@ async def test_failed_write_is_retried_next_tick() -> None:
     d = TeleopDriver(flaky)
     d.press("W")
     assert await d.tick() is None
-    assert await d.tick() == "DRV,150,0"
+    assert await d.tick() == "DRV,50,0"  # SPD default
+
+
+def test_speed_follows_spd_with_the_pivot_ratio() -> None:
+    d, _ = rig()
+    d.speed_mm_s = 50
+    d.press("W")
+    d.press("D")
+    assert d.setpoint() == (50, 180)  # the line follower pivots at 180 deg/s at 50 mm/s
+    d.speed_mm_s = 500
+    assert d.setpoint() == (300, 360)  # capped like the hub

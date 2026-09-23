@@ -57,8 +57,8 @@ BASE_SPEED = {{ tuning.base_speed_mm_s }}
 OBSTACLE_MM = {{ tuning.obstacle_threshold_mm }}
 
 # teleop setpoint (protocol.md, DRV); only teleop.py.j2 drives from it
-DRV_MAX_SPEED = 300
-DRV_MAX_TURN = 180
+DRV_MAX_SPEED = {{ max_speed }}
+DRV_MAX_TURN = {{ max_turn }}
 DRV_SPEED = 0
 DRV_TURN = 0
 _drv_timer = StopWatch()
