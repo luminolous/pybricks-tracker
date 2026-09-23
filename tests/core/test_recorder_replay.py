@@ -60,7 +60,7 @@ def test_header_first_with_battery_and_config(tmp_path) -> None:
     assert header["started_at"] == "2026-09-23T10:04:11Z"
     assert header["battery_mv"] == 7810
     assert header["config"]["ports"]["C"]["role"] == "wheel_left"
-    assert header["tuning"]["kp"] == -1.8
+    assert header["tuning"]["kp"] == -1.5
     assert json.loads(lines[1])["t"] == 40  # buffered record kept its place
     assert len(lines) == 1 + len(RECORDS)
 

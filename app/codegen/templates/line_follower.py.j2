@@ -1,25 +1,45 @@
 {% extends "_base.py.j2" %}
 {% block control %}
-# Line follower: PD on reflection around the calibrated edge, pivot in place
-# on black, search when white lasts too long, stop for obstacles.
+# Line follower, ported from the original hand-written script: PD on
+# reflection around the calibrated edge, pivot in place on black, and when
+# white lasts too long, back up and sweep for the line by angle, first
+# toward the correction, then twice as far the other way. Calibration and the
+# live check moved to the app. Blocking moves became steps of the base loop,
+# so commands, the watchdog and telemetry keep running during a search.
+
+from pybricks.parameters import Color
 
 BLACK = {{ calibration.black }}
 WHITE = {{ calibration.white }}
 EDGE = {{ calibration.edge }}
-PIVOT_BELOW = BLACK + (WHITE - BLACK) // 8  # fully on black: sharp corner
-LOST_ABOVE = WHITE - (WHITE - BLACK) // 8  # fully on white
-PIVOT_RATE = 120  # deg/s
-LOST_MS = 300  # white this long means the line is gone
-SEARCH_RATE = 90  # deg/s
-SEARCH_MS = 1200  # first sweep; the return sweep lasts twice as long
+BLACK_BELOW = (BLACK + EDGE) // 2  # original: nilai < (hitam + TEPI) / 2
+WHITE_ABOVE = (WHITE + EDGE) // 2  # original: nilai > (putih + TEPI) / 2
+PIVOT_RATE = 180  # deg/s, turn in place on black
+SEARCH_RATE = 150  # deg/s, sweep while looking for a lost line
+LOST_MS = 150  # white this long means the line is gone (90 degree corner)
+SEARCH_DEG = 120  # first sweep; the return sweep covers twice this
+BACKUP_MM = 20  # back up before sweeping
 
 _last_error = 0
-_last_turn_sign = 1
 _white_timer = StopWatch()
-_search_timer = StopWatch()
-_search_phase = 0  # 0 following, 1 first sweep, 2 return sweep
+_search = 0  # 0 following, 1 backing up, 2 first sweep, 3 return sweep
 _search_dir = 1
+_sweep_start = 0
 _obstacle = False
+_light = None
+
+
+def light(color):
+    # Hub light per state, as in the original; only touched on change.
+    global _light
+    if color != _light:
+        hub.light.on(color)
+        _light = color
+
+
+def correction_dir(error):
+    # Turn direction of the correction; follows the sign of KP.
+    return 1 if KP * error > 0 else -1
 
 
 def setup():
@@ -28,48 +48,60 @@ def setup():
     _white_timer.reset()
 
 
-def start_search():
-    global STATE, STEER, _search_phase, _search_dir
-    _search_phase = 1
-    _search_dir = _last_turn_sign
-    _search_timer.reset()
+def start_search(error):
+    global STATE, STEER, _search, _search_dir
+    robot.stop()
+    _search_dir = correction_dir(error)
+    _search = 1
     STATE = "SEARCH"
-    STEER = SEARCH_RATE * _search_dir
+    STEER = 0
+    light(Color.BLUE)
     emit_e("LOST")
+    robot.straight(-BACKUP_MM, wait=False)
 
 
 def search_step(refl):
-    global STATE, STEER, STOPPED, _search_phase, _search_dir
-    if refl < LOST_ABOVE:
-        _search_phase = 0
+    global STATE, STEER, STOPPED, _search, _search_dir, _sweep_start, _last_error
+    if _search == 1:
+        if robot.done():
+            _search = 2
+            _sweep_start = robot.angle()
+        return
+    if refl < EDGE:
+        robot.stop()
+        _search = 0
+        _last_error = 0
         _white_timer.reset()
         STATE = "FOLLOW"
         emit_e("FOUND")
         return
-    limit = SEARCH_MS if _search_phase == 1 else 2 * SEARCH_MS
-    if _search_timer.time() > limit:
-        if _search_phase == 1:
-            _search_phase = 2
+    limit = SEARCH_DEG if _search == 2 else 2 * SEARCH_DEG
+    if abs(robot.angle() - _sweep_start) >= limit:
+        robot.stop()
+        if _search == 2:
+            _search = 3
             _search_dir = -_search_dir
-            _search_timer.reset()
+            _sweep_start = robot.angle()
         else:
-            robot.stop()
             STEER = 0
             STATE = "STOP"
             emit_e("GIVEUP")
+            hub.speaker.beep(400, 500)
             STOPPED = True
             return
-    STEER = SEARCH_RATE * _search_dir
+    STEER = _search_dir * SEARCH_RATE
     robot.drive(0, STEER)
 
 
 def control_step(n, refl):
-    global STATE, STEER, _last_error, _last_turn_sign, _obstacle
+    global STATE, STEER, _last_error, _obstacle
 {% if distance %}
     if _distance_mm < OBSTACLE_MM:
         if not _obstacle:
             _obstacle = True
             emit_e("OBS", _distance_mm)
+            light(Color.MAGENTA)
+            hub.speaker.beep(1000, 100)
         robot.stop()
         STEER = 0
         STATE = "OBSTACLE"
@@ -78,28 +110,26 @@ def control_step(n, refl):
         _obstacle = False
         STATE = "FOLLOW"
 {% endif %}
-    if _search_phase:
+    if _search:
         search_step(refl)
         return
 
     error = refl - EDGE
-    if refl < LOST_ABOVE:
+    if refl <= WHITE_ABOVE:
         _white_timer.reset()
     elif _white_timer.time() > LOST_MS:
-        start_search()
+        start_search(error)
         return
 
-    if refl <= PIVOT_BELOW:
-        STEER = PIVOT_RATE if KP * error > 0 else -PIVOT_RATE
+    if refl < BLACK_BELOW:
+        STEER = correction_dir(error) * PIVOT_RATE
         STATE = "PIVOT"
+        light(Color.RED)
         robot.drive(0, STEER)
     else:
         STEER = KP * error + KD * (error - _last_error)
         STATE = "FOLLOW"
+        light(Color.GREEN if refl > WHITE_ABOVE else Color.YELLOW)
         robot.drive(BASE_SPEED, STEER)
     _last_error = error
-    if STEER > 0:
-        _last_turn_sign = 1
-    elif STEER < 0:
-        _last_turn_sign = -1
 {% endblock %}

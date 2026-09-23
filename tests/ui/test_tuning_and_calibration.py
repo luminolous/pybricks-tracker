@@ -94,7 +94,7 @@ async def test_drag_sends_latest_and_shows_ack(window) -> None:
     assert tuning_writes(window) == ["KP,-2.5\r\n"]
     window._tick_ui()
     ack = window.tuning.rows["KP"].ack
-    assert ack.text() == "hub -1.80 · sending"
+    assert ack.text() == "hub -1.50 · sending"
     assert ack.property("tone") == "warn"
 
     window.fakes.hub.emit(b"E,ACK,900,0.0,0.0,KP:-2.5\n")
@@ -110,7 +110,7 @@ async def test_dropped_write_turns_red(window) -> None:
     await window.tuner.flush()
     window.tuner.params["KD"].sent_at -= 5  # long ago, never acknowledged
     window._tick_ui()
-    assert window.tuning.rows["KD"].ack.text() == "hub -4.50 · no reply"
+    assert window.tuning.rows["KD"].ack.text() == "hub -5.00 · no reply"
     assert window.tuning.rows["KD"].ack.property("tone") == "danger"
 
 

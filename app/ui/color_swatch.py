@@ -19,11 +19,12 @@ SWATCH_WIDTH_PX = 132
 
 
 def classify(reflection: int, calibration: SensorCalibration) -> str:
-    """Same bands the line follower uses: an eighth of the range at each end."""
-    band = (calibration.white - calibration.black) // 8
-    if reflection <= calibration.black + band:
+    """Same bands as line_follower.py.j2 (and the original script's klasifikasi):
+    black below the midpoint of black and edge, white above that of white and edge."""
+    edge = calibration.edge
+    if reflection < (calibration.black + edge) // 2:
         return "BLACK"
-    if reflection >= calibration.white - band:
+    if reflection > (calibration.white + edge) // 2:
         return "WHITE"
     return "EDGE"
 

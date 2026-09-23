@@ -114,7 +114,7 @@ def test_renders_config_values(source: str) -> None:
     assert "ColorSensor(Port.D)" in source
     assert "UltrasonicSensor(Port.E)" in source
     assert "wheel_diameter=56.0" in source
-    assert "KP = -1.8" in source
+    assert "KP = -1.5" in source
     assert "EDGE = 52" in source
 
 
@@ -252,3 +252,60 @@ def test_teleop_has_a_dead_man_and_obstacle_stop() -> None:
 
 def test_teleop_without_distance_sensor_has_no_obstacle_check() -> None:
     assert "_distance_mm < OBSTACLE_MM" not in render(without(Role.DISTANCE_SENSOR), "teleop")
+
+
+# -- ported from the original hand-written line follower -------------------------
+
+
+def test_original_constants(source: str) -> None:
+    for line in (
+        "KP = -1.5",
+        "KD = -5.0",
+        "BASE_SPEED = 50.0",
+        "OBSTACLE_MM = 50",
+        "PIVOT_RATE = 180",
+        "SEARCH_RATE = 150",
+        "LOST_MS = 150",
+        "SEARCH_DEG = 120",
+        "BACKUP_MM = 20",
+        "BLACK_BELOW = (BLACK + EDGE) // 2",
+        "WHITE_ABOVE = (WHITE + EDGE) // 2",
+    ):
+        assert re.search(rf"^{re.escape(line)}\b", source, re.MULTILINE), line
+
+
+def test_search_backs_up_then_sweeps_by_angle(source: str) -> None:
+    start = function(source, "start_search")
+    assert "robot.straight(-BACKUP_MM, wait=False)" in start  # non-blocking back-up
+    assert "_search_dir = correction_dir(error)" in start
+    step = function(source, "search_step")
+    assert "if robot.done():" in step
+    assert "abs(robot.angle() - _sweep_start) >= limit" in step
+    assert "limit = SEARCH_DEG if _search == 2 else 2 * SEARCH_DEG" in step
+    assert "if refl < EDGE:" in step  # found, as the original: warna.reflection() < TEPI
+    assert 'emit_e("GIVEUP")' in step
+
+
+def test_pivot_and_white_timer_follow_the_original(source: str) -> None:
+    control = function(source, "control_step")
+    assert "if refl < BLACK_BELOW:" in control
+    assert "STEER = correction_dir(error) * PIVOT_RATE" in control
+    assert "if refl <= WHITE_ABOVE:" in control and "_white_timer.reset()" in control
+    assert "elif _white_timer.time() > LOST_MS:" in control
+    assert "correction_dir" in function(source, "correction_dir")
+    assert "return 1 if KP * error > 0 else -1" in function(source, "correction_dir")
+
+
+def test_hub_light_shows_state(source: str) -> None:
+    assert "from pybricks.parameters import Color" in source
+    for color in ("RED", "GREEN", "YELLOW", "BLUE", "MAGENTA"):
+        assert f"Color.{color}" in source
+    assert "if color != _light:" in function(source, "light")  # only on change
+
+
+async def test_probe_tool_compiles_and_never_drives() -> None:
+    probe = Path(__file__).resolve().parents[2] / "tools" / "hub" / "probe_api.py"
+    assert len(await compile_file(str(probe.parent), probe.name, 6)) > 0
+    text = probe.read_text(encoding="utf-8")
+    for moving in (".drive(", ".straight(", ".turn(", ".run(", ".dc("):
+        assert moving not in text, moving

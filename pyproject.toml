@@ -7,8 +7,9 @@ requires-python = ">=3.12"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-# Hub programs are MicroPython rendered from Jinja2, never linted as CPython.
-extend-exclude = ["app/codegen/templates"]
+# Hub programs are MicroPython (rendered from Jinja2, or static tools), never
+# linted as CPython.
+extend-exclude = ["app/codegen/templates", "tools/hub"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]

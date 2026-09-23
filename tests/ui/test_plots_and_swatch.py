@@ -13,7 +13,7 @@ from app.ui.main_window import MainWindow, loop_dt_tone
 from app.ui.plot_panel import PlotPanel
 from tests.fakes import FakeHubs
 
-CAL = SensorCalibration(black=8, white=96)  # edge 52, bands of 11
+CAL = SensorCalibration(black=8, white=96)  # edge 52: black below 30, white above 74
 
 
 def fed(*lines: str) -> RobotState:
@@ -25,7 +25,7 @@ def fed(*lines: str) -> RobotState:
 
 @pytest.mark.parametrize(
     ("reflection", "expected"),
-    [(8, "BLACK"), (19, "BLACK"), (20, "EDGE"), (84, "EDGE"), (85, "WHITE")],
+    [(8, "BLACK"), (29, "BLACK"), (30, "EDGE"), (74, "EDGE"), (75, "WHITE")],
 )
 def test_classify_matches_line_follower_bands(reflection: int, expected: str) -> None:
     assert classify(reflection, CAL) == expected

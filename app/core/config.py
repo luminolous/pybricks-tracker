@@ -121,9 +121,10 @@ class RobotGeometry:
 
 @dataclass(frozen=True)
 class TuningParams:
-    kp: float = -1.8
-    kd: float = -4.5
-    base_speed_mm_s: float = 70.0
+    # Defaults from the original hand-written line follower (KECEPATAN, KP, KD, BATAS).
+    kp: float = -1.5
+    kd: float = -5.0
+    base_speed_mm_s: float = 50.0
     obstacle_threshold_mm: int = 50
 
 
