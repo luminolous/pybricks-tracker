@@ -9,8 +9,13 @@ The Qt implementation in `app/ui/` follows this file. Where it disagrees with
 
 Known deviations in the Qt build:
 
-- Left column is 276 px, not 252. Port rows (device, role, direction) did not
-  fit at real font metrics.
+- Left column is 296 px, not 252. Port rows (device, role, direction) did not
+  fit at real font metrics; at 276 px the direction combo covered the role
+  combo's arrow. The device name now shrinks first.
+- The readout strip has two more cells after state: `speed mm/s` and the turn
+  rate (`pivot / search` for the line follower, `turn` for teleop and the
+  drift test). They show what the running program drives at, using the SPD
+  the hub acknowledged.
 - Device names are shortened in the port table (`Motor`, `Ultrasonic`); the
   full name is the tooltip.
 

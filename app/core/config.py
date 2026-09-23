@@ -129,9 +129,41 @@ MAX_TURN_DEG_S = 360
 MAX_SPEED_MM_S = 300
 
 
+DRIFT_SPEED_MM_S = 150  # slow for repeatable wheel slip
+DRIFT_TURN_DEG_S = 90
+
+
 def turn_rate_deg_s(speed_mm_s: float, deg_per_mm: float = PIVOT_DEG_PER_MM) -> float:
     """Turn rate that goes with a forward speed, capped at MAX_TURN_DEG_S."""
     return min(MAX_TURN_DEG_S, abs(speed_mm_s) * deg_per_mm)
+
+
+@dataclass(frozen=True)
+class DriveProfile:
+    """Speeds a program drives at, for the readout row. Text, ready to show."""
+
+    speed: str  # mm/s
+    turn_caption: str
+    turn: str  # deg/s
+
+
+IDLE_PROFILE = DriveProfile("—", "turn °/s", "—")
+
+
+def drive_profile(mode: str | None, speed_mm_s: float) -> DriveProfile:
+    """What the running program drives at. `speed_mm_s` is SPD as the hub has it."""
+    speed = min(MAX_SPEED_MM_S, abs(speed_mm_s))
+    if mode == "line_follower":
+        pivot = turn_rate_deg_s(speed, PIVOT_DEG_PER_MM)
+        search = turn_rate_deg_s(speed, SEARCH_DEG_PER_MM)
+        return DriveProfile(f"{speed:.0f}", "pivot / search °/s", f"{pivot:.0f} / {search:.0f}")
+    if mode == "teleop":
+        return DriveProfile(f"{speed:.0f}", "turn °/s", f"{turn_rate_deg_s(speed):.0f}")
+    if mode == "drift_test":
+        return DriveProfile(f"{DRIFT_SPEED_MM_S}", "turn °/s", f"{DRIFT_TURN_DEG_S}")
+    if mode == "calibrate":
+        return DriveProfile("0", "turn °/s", "0")  # holds still
+    return IDLE_PROFILE
 
 
 @dataclass(frozen=True)

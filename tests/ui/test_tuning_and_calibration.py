@@ -107,6 +107,22 @@ async def test_drag_sends_latest_and_shows_ack(window) -> None:
     assert ack.property("tone") == "ok"
 
 
+async def test_readout_shows_the_speed_the_hub_acknowledged(window) -> None:
+    await running(window)
+    window._tick_ui()
+    assert window.readouts["speed"].text() == "50"
+    assert window.readouts["turn"].text() == "180 / 150"
+    window.tuning.rows["SPD"].set_value(100)
+    await window.tuner.flush()
+    window._tick_ui()
+    assert window.readouts["speed"].text() == "50"  # not acknowledged yet
+    window.fakes.hub.emit(b"E,ACK,900,0.0,0.0,SPD:100.0\n")
+    await asyncio.sleep(0.01)
+    window._tick_ui()
+    assert window.readouts["speed"].text() == "100"
+    assert window.readouts["turn"].text() == "360 / 300"
+
+
 async def test_dropped_write_turns_red(window) -> None:
     await running(window)
     window.tuning.rows["KD"].set_value(-6.0)

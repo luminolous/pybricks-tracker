@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+)
 
 from app.core.config import (
     DEFAULT_ASSIGNMENTS,
@@ -18,7 +26,7 @@ from app.core.protocol import PORT_LETTERS, DeviceKind
 from app.core.state import PortScan
 from app.ui.theme import caption, label, set_prop
 
-# Short names fit the 276 px column; the full name goes in the tooltip.
+# Short names fit the 296 px column; the full name goes in the tooltip.
 SHORT_DEVICE_NAMES = {
     DeviceKind.MOTOR: "Motor",
     DeviceKind.COLOR_SENSOR: "Color sensor",
@@ -34,6 +42,10 @@ class PortRow:
         self.letter = label(port, tone="muted", mono=True)
         self.letter.setFixedWidth(12)
         self.device = label("not scanned", tone="dim")
+        # the name shrinks (full text in the tooltip) so it never pushes the
+        # role combo under the direction combo
+        self.device.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.device.setMinimumWidth(40)
         self.role = QComboBox()
         for role in Role:
             self.role.addItem(ROLE_LABELS[role], role)
@@ -56,7 +68,7 @@ class PortRow:
         self.refresh()
 
     def set_device(self, name: str | None, kind: DeviceKind | None) -> None:
-        self.device.setToolTip(name or "")
+        self.device.setToolTip(name or "not scanned")
         if kind is None:
             self.device.setText("not scanned")
             set_prop(self.device, "tone", "dim")

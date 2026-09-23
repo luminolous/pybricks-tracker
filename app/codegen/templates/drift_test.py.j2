@@ -10,8 +10,8 @@ MOVES = (
     ("{{ kind }}", {{ amount }}),
 {% endfor %}
 )
-STRAIGHT_SPEED = 150  # mm/s, slow for repeatable wheel slip
-TURN_RATE = 90  # deg/s
+STRAIGHT_SPEED = {{ drift_speed }}  # mm/s, slow for repeatable wheel slip
+TURN_RATE = {{ drift_turn }}  # deg/s
 
 _move = -1
 

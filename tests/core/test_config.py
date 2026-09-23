@@ -116,3 +116,19 @@ def test_bad_files_raise_config_error(tmp_path, content: str, message: str) -> N
 def test_missing_file_raises_config_error(tmp_path) -> None:
     with pytest.raises(ConfigError, match="Cannot read"):
         RobotConfig.load(tmp_path / "nope.json")
+
+
+# -- drive profile readout ----------------------------------------------------
+
+
+def test_drive_profile_per_mode() -> None:
+    from app.core.config import IDLE_PROFILE, drive_profile
+
+    lf = drive_profile("line_follower", 50)
+    assert (lf.speed, lf.turn_caption, lf.turn) == ("50", "pivot / search °/s", "180 / 150")
+    tele = drive_profile("teleop", 80)
+    assert (tele.speed, tele.turn) == ("80", "288")
+    assert drive_profile("teleop", 200).turn == "360"  # capped like the hub
+    drift = drive_profile("drift_test", 50)
+    assert (drift.speed, drift.turn) == ("150", "90")  # fixed, SPD ignored
+    assert drive_profile(None, 50) is IDLE_PROFILE

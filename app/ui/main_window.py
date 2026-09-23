@@ -38,10 +38,13 @@ from PySide6.QtWidgets import (
 from app.codegen.generator import LOOP_MS, SCAN_PORTS_PROGRAM, GeneratorError, generate
 from app.core.config import (
     CONFIGS_DIR,
+    IDLE_PROFILE,
     ConfigError,
+    DriveProfile,
     RobotConfig,
     RobotGeometry,
     SensorCalibration,
+    drive_profile,
 )
 from app.core.connection import HubConnection, HubConnectionError, LinkState, run_heartbeat
 from app.core.export import copy_session, session_to_csv
@@ -84,7 +87,7 @@ MIN_WIDTH_PX = 1280
 MIN_HEIGHT_PX = 800
 HEADER_PX = 44
 CONSOLE_PX = 112
-LEFT_COL_PX = 276  # mockup had 252; port rows need the extra room at real font metrics
+LEFT_COL_PX = 296  # mockup had 252; port rows need device + role + direction side by side
 RIGHT_COL_PX = 340
 SCAN_TIMEOUT_S = 10.0
 HANDSHAKE_TIMEOUT_S = 5.0  # upload done -> R line; longer means the program crashed
@@ -409,19 +412,33 @@ class MainWindow(QMainWindow):
         ro_row.setContentsMargins(0, 0, 0, 0)
         ro_row.setSpacing(0)
         self.readouts: dict[str, QLabel] = {}
-        for key in ("x", "y", "heading", "reflection", "steer", "state"):
+        self.readout_captions: dict[str, QLabel] = {}
+        # speed and turn: what the running program drives at (SPD as the hub
+        # acknowledged it, the turn rates derived from it, or fixed drift speeds)
+        for key, title in (
+            ("x", "x"),
+            ("y", "y"),
+            ("heading", "heading"),
+            ("reflection", "reflection"),
+            ("steer", "steer"),
+            ("state", "state"),
+            ("speed", "speed mm/s"),
+            ("turn", IDLE_PROFILE.turn_caption),
+        ):
             cell = _frame("readoutCell")
             cell_layout = QVBoxLayout(cell)
             cell_layout.setContentsMargins(16, 0, 16, 0)
             cell_layout.setSpacing(4)
             cell_layout.addStretch()
-            cell_layout.addWidget(label(key, tone="muted"))
+            caption_label = label(title, tone="muted")
+            cell_layout.addWidget(caption_label)
             value = label("—")
             value.setProperty("big", True)
             cell_layout.addWidget(value)
             cell_layout.addStretch()
             self.readouts[key] = value
-            ro_row.addWidget(cell, 1)
+            self.readout_captions[key] = caption_label
+            ro_row.addWidget(cell, 2 if key == "turn" else 1)
 
         tools = _frame("rightCol")
         tools.setFixedWidth(64)
@@ -1066,6 +1083,7 @@ class MainWindow(QMainWindow):
         self._last_tick_s = now
         view = self.view_state
         self._refresh_readouts()
+        self._refresh_drive_profile()
         calibration = self._base_config.calibration
         self.map.sensor_offset_mm = self.geometry_fields["sensor_offset_mm"].value()
         self.map.calibration = calibration
@@ -1159,6 +1177,28 @@ class MainWindow(QMainWindow):
         r["steer"].setText(str(t.steer))
         r["state"].setText(t.state)
         set_prop(r["state"], "tone", STATE_TONES.get(t.state, "text"))
+
+    def drive_profile(self) -> DriveProfile:
+        if self._replay is not None or not self.conn.program_running:
+            return IDLE_PROFILE
+        if self._current_mode == "teleop":
+            speed = self.teleop.speed_mm_s
+        else:
+            # the hub's acknowledged SPD while live, so a lost write shows here
+            acked = self.tuner.acked("SPD") if self._tuning_live else None
+            speed = acked if acked is not None else self.tuning.rows["SPD"].value()
+        return drive_profile(self._current_mode, speed)
+
+    def _refresh_drive_profile(self) -> None:
+        profile = self.drive_profile()
+        for key, text in (
+            ("speed", profile.speed),
+            ("turn", profile.turn),
+        ):
+            if self.readouts[key].text() != text:
+                self.readouts[key].setText(text)
+        if self.readout_captions["turn"].text() != profile.turn_caption:
+            self.readout_captions["turn"].setText(profile.turn_caption)
 
     # -- slots ----------------------------------------------------------------
 

@@ -116,3 +116,14 @@ async def test_selftest_compiles_every_program(capsys) -> None:
     out = capsys.readouterr().out
     assert "hub_teleop.py" in out and "scan_ports.py" in out
     assert "selftest passed" in out
+
+
+async def test_readout_shows_teleop_speed(window) -> None:
+    window.tuning.rows["SPD"].set_value(100)
+    await driving(window)
+    window._tick_ui()
+    assert window.readouts["speed"].text() == "100"
+    assert window.readouts["turn"].text() == "360"
+    window.tuning.rows["SPD"].set_value(40)
+    window._tick_ui()
+    assert window.readouts["turn"].text() == "144"
