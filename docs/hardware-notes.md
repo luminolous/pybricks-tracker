@@ -84,3 +84,16 @@ Before the crash the line follower did run: `R`, `S` (battery 7158 mV, IMU
 ready) and two `T` lines arrived, reflection 6 and 10, state `PIVOT` at
 180 deg/s. So the colour sensor on A does read, and the robot turned briefly
 on the table: the calibration reading 0 was the crash, not the sensor.
+
+## 2026-09-23 — stage 2: calibration, heading sign (after the fix)
+
+Robot held by hand, calibrate program streaming, in the app.
+
+- Calibration worked end to end; black/white gap comfortably above 30, no
+  warning. (Exact values not recorded; they are in the saved config.)
+- **Heading sign confirmed**: turning the robot left by hand raised the
+  heading readout and rotated the map marker left. `_base.py.j2`'s
+  `-hub.imu.heading()` is right; Pybricks heading is clockwise-positive.
+- Header: battery 7.14 V, loop 10 ms (calibrate program, all telemetry on).
+- No battery gauge in the header, only text: the approved mockup has one.
+  Added.

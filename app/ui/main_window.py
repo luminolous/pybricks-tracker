@@ -61,6 +61,7 @@ from app.core.replay import Replay
 from app.core.state import EventRecord, PortScan, RobotState, TelemetryWatch
 from app.core.teleop import TeleopDriver
 from app.core.tuning import TuningSender
+from app.ui.battery_gauge import BatteryGauge
 from app.ui.code_preview import CodePreview
 from app.ui.console_pane import ConsolePane
 from app.ui.dialogs.calibration import CalibrationDialog
@@ -279,6 +280,7 @@ class MainWindow(QMainWindow):
         self.link_label = label("disconnected", tone="muted")
         self.run_state = label("IDLE", tone="muted", mono=True)
         self.mode_label = label("", tone="muted")
+        self.battery_gauge = BatteryGauge()
         self.battery_label = label("— V", mono=True)
         self.battery_label.setToolTip("Hub battery, from S lines (M5)")
         self.loop_label = label("— ms", mono=True)
@@ -303,7 +305,7 @@ class MainWindow(QMainWindow):
         self.rec_seg.hide()
         row.addWidget(self.rec_seg)
         row.addStretch()
-        row.addWidget(_segment(label("battery", tone="muted"), self.battery_label))
+        row.addWidget(_segment(self.battery_gauge, self.battery_label))
         row.addWidget(_segment(label("loop", tone="muted"), self.loop_label))
         row.addWidget(_segment(label("rx", tone="muted"), self.rx_label))
         row.addWidget(estop_wrap)
@@ -1070,6 +1072,7 @@ class MainWindow(QMainWindow):
         self._show_rec_label()
         if view.battery_mv is not None:
             self.battery_label.setText(f"{view.battery_mv / 1000:.2f} V")
+        self.battery_gauge.set_voltage(view.battery_mv)
         self._show_loop_dt()
         if self._calibration_dialog is not None and self._calibration_dialog.isVisible():
             self._calibration_dialog.show_live(self.state.reflection)
