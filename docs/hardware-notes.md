@@ -113,3 +113,18 @@ Robot on a box, wheels free, teleop from the app.
   while Pybricks Code showed a healthy pack. Replaced by the hub's own
   low-voltage status flags, as Pybricks Code does; the voltage stays as text.
 - Map marker (110 mm long) felt too big; now 65 mm.
+- W forward, S back, A left (left wheel back, right forward), D right: all
+  correct. So `DriveBase.drive(speed, turn)` turns right for a positive turn
+  rate, as protocol.md's DRV sign assumes.
+
+## 2026-09-23 — stage 3 (part 2): stopping (M3)
+
+Robot on a box, teleop driving forward, then each stop path in turn. The user
+reported that every one stopped the wheels safely:
+
+- releasing the keys (hub dead-man, 300 ms)
+- Space (E-STOP)
+- closing the app mid-drive (app stops the program; hub watchdog as backup)
+- losing the BLE link (hub watchdog)
+
+**M3 acceptance: PASSED.**
