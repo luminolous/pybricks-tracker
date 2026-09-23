@@ -104,7 +104,7 @@ def test_imu_wait_keeps_serving_commands_and_watchdog(source: str) -> None:
 
 def test_commands_reset_watchdog_clock(source: str) -> None:
     check = source[source.index("def check_commands():") : source.index("def watchdog_ok():")]
-    assert check.index("_last_rx.reset()") < check.index('key, _, value = line.partition(",")')
+    assert check.index("_last_rx.reset()") < check.index("key, value = split_once(line)")
     assert "_poll.poll(0)" in check
 
 
@@ -309,3 +309,48 @@ async def test_probe_tool_compiles_and_never_drives() -> None:
     text = probe.read_text(encoding="utf-8")
     for moving in (".drive(", ".straight(", ".turn(", ".run(", ".dc("):
         assert moving not in text, moving
+
+
+# Pybricks MicroPython builds str without these (found on the real hub:
+# "'str' object has no attribute 'partition'" killed every mode program on the
+# first command). mpy-cross cannot catch a missing method, so ban them here.
+MISSING_STR_METHODS = (
+    "partition",
+    "rpartition",
+    "splitlines",
+    "zfill",
+    "ljust",
+    "rjust",
+    "removeprefix",
+    "removesuffix",
+    "casefold",
+    "title",
+    "capitalize",
+    "swapcase",
+    "expandtabs",
+)
+
+
+def all_hub_sources() -> list[tuple[str, str]]:
+    from app.codegen.generator import SCAN_PORTS_PROGRAM
+    from app.core.analysis import DRIFT_TESTS
+
+    out = [(mode, render(DEFAULT, mode)) for mode in ("line_follower", "calibrate", "teleop")]
+    out += [(f"drift_{k}", render(DEFAULT, "drift_test", drift=k)) for k in DRIFT_TESTS]
+    out.append(("scan_ports", SCAN_PORTS_PROGRAM.read_text(encoding="utf-8")))
+    probe = Path(__file__).resolve().parents[2] / "tools" / "hub" / "probe_api.py"
+    out.append(("probe", probe.read_text(encoding="utf-8")))
+    return out
+
+
+@pytest.mark.parametrize(("name", "text"), all_hub_sources())
+def test_no_str_methods_missing_on_the_hub(name: str, text: str) -> None:
+    code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())  # skip comments
+    used = [m for m in MISSING_STR_METHODS if re.search(rf"\.{m}\(", code)]
+    assert used == [], f"{name} uses {used}"
+
+
+def test_split_once_is_what_commands_use(source: str) -> None:
+    helper = function(source, "split_once")
+    assert 'i = text.find(",")' in helper
+    assert "split_once(value)" in function(source, "check_commands")  # DRV speed,turn

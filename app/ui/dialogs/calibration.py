@@ -45,6 +45,8 @@ class CalibrationDialog(QDialog):
         self.start_button = QPushButton("Start sensor stream")
         self.start_button.setProperty("role", "run")
         self.status = label("", tone="muted")
+        self.live = label("Live reflection: —", mono=True)
+        self.live.setStyleSheet("font-size: 15px;")
         self.status.setWordWrap(True)
         self.black_button = QPushButton("Sample black")
         self.white_button = QPushButton("Sample white")
@@ -85,6 +87,7 @@ class CalibrationDialog(QDialog):
         )
         layout.addWidget(self.start_button)
         layout.addWidget(self.status)
+        layout.addWidget(self.live)
         layout.addLayout(grid)
         layout.addWidget(self.summary)
         layout.addLayout(buttons)
@@ -105,6 +108,12 @@ class CalibrationDialog(QDialog):
         self.black_button.setEnabled(True)
         self.white_button.setEnabled(True)
         return True
+
+    def show_live(self, reflection: int | None) -> None:
+        """Latest reading, so you can see what the sensor sees before sampling."""
+        text = "Live reflection: —" if reflection is None else f"Live reflection: {reflection}"
+        if self.live.text() != text:
+            self.live.setText(text)
 
     def sample(self, which: str) -> int | None:
         values = self._samples(SAMPLE_WINDOW_MS)

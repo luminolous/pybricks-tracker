@@ -1071,6 +1071,8 @@ class MainWindow(QMainWindow):
         if view.battery_mv is not None:
             self.battery_label.setText(f"{view.battery_mv / 1000:.2f} V")
         self._show_loop_dt()
+        if self._calibration_dialog is not None and self._calibration_dialog.isVisible():
+            self._calibration_dialog.show_live(self.state.reflection)
         if self._tuning_live:
             for key in self.tuning.rows:
                 self.tuning.show_ack(

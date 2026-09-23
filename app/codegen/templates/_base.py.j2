@@ -202,6 +202,14 @@ def check_bump():
 # -- commands: non-blocking stdin poll, never wait inside the loop --
 
 
+def split_once(text):
+    # "KP,-1.5" -> ("KP", "-1.5"). Pybricks MicroPython has no str.partition.
+    i = text.find(",")
+    if i < 0:
+        return text, ""
+    return text[:i], text[i + 1 :]
+
+
 def check_commands():
     global KP, KD, BASE_SPEED, OBSTACLE_MM, STOPPED, PAUSED, DRV_SPEED, DRV_TURN
     while _poll.poll(0):
@@ -209,7 +217,7 @@ def check_commands():
         if not line:
             break
         _last_rx.reset()
-        key, _, value = line.partition(",")
+        key, value = split_once(line)
         try:
             if key == "KP":
                 KP = float(value)
@@ -233,7 +241,7 @@ def check_commands():
             elif key == "ORG":
                 reset_origin()
             elif key == "DRV":
-                speed, _, turn = value.partition(",")
+                speed, turn = split_once(value)
                 DRV_SPEED = max(-DRV_MAX_SPEED, min(DRV_MAX_SPEED, float(speed)))
                 DRV_TURN = max(-DRV_MAX_TURN, min(DRV_MAX_TURN, float(turn)))
                 _drv_timer.reset()

@@ -42,9 +42,9 @@ class DeviceType:
     kind: DeviceKind
 
 
-# PUPDevice(port).info()["id"] -> device. PROVISIONAL: taken from the LEGO
-# Powered Up type IDs used by Pybricks, not yet observed on this kit. Confirm
-# with a real scan and record the result (see /hardware-log).
+# PUPDevice(port).info()["id"] -> device. From the LEGO Powered Up type IDs.
+# Observed on this kit (docs/hardware-notes.md, 2026-09-23): 51515 motor = 75,
+# colour sensor = 61. The rest are still unconfirmed on real hardware.
 DEVICE_IDS: dict[int, DeviceType] = {
     0: DeviceType("empty", DeviceKind.EMPTY),
     48: DeviceType("Medium motor", DeviceKind.MOTOR),

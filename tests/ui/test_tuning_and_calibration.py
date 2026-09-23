@@ -213,5 +213,7 @@ async def test_calibration_through_main_window(window) -> None:
     assert window.fakes.hub.ran[-1].endswith("hub_calibrate.py")
     await asyncio.sleep(0.05)
     assert d.sample("black") == 12
+    window._tick_ui()
+    assert d.live.text() == "Live reflection: 12"
     window.apply_calibration(SensorCalibration(12, 88))
     assert window.current_config().calibration.edge == 50
