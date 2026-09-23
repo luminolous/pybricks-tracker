@@ -104,6 +104,12 @@ QPushButton[role="run"]:disabled {{ background: transparent; border-color: {LINE
 QPushButton[role="small"] {{
     padding: 3px 8px; color: {MUTED}; border-color: {LINE_STRONG}; text-align: center;
 }}
+QPushButton[role="small"]:checked {{
+    color: {ACCENT}; border-color: rgba(63, 208, 230, 110); background: {ACCENT_DIM};
+}}
+QPushButton[role="small"]:checked:disabled {{
+    color: {MUTED}; border-color: {LINE_STRONG}; background: {FIELD};
+}}
 QPushButton[role="tool"] {{
     border: 1px solid transparent; color: {MUTED}; padding: 8px 0; text-align: center;
     font-size: 11px;

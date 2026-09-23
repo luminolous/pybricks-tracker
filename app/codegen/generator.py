@@ -13,13 +13,9 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from app.core.analysis import DRIFT_TESTS
 from app.core.config import (
-    DRIFT_SPEED_MM_S,
-    DRIFT_TURN_DEG_S,
     MAX_SPEED_MM_S,
     MAX_TURN_DEG_S,
     MOTOR_ROLES,
-    PIVOT_DEG_PER_MM,
-    SEARCH_DEG_PER_MM,
     PortAssignment,
     RobotConfig,
     Role,
@@ -114,10 +110,6 @@ def render(config: RobotConfig, mode: str, drift: str | None = None) -> str:
         "distance_every": DISTANCE_EVERY_LOOPS,
         "max_speed": MAX_SPEED_MM_S,
         "max_turn": MAX_TURN_DEG_S,
-        "pivot_per_mm": PIVOT_DEG_PER_MM,
-        "search_per_mm": SEARCH_DEG_PER_MM,
-        "drift_speed": DRIFT_SPEED_MM_S,
-        "drift_turn": DRIFT_TURN_DEG_S,
     }
     return _environment().get_template(f"{mode}.py.j2").render(context)
 

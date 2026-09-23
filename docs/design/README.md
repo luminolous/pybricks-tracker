@@ -14,8 +14,10 @@ Known deviations in the Qt build:
   combo's arrow. The device name now shrinks first.
 - The readout strip has two more cells after state: `speed mm/s` and the turn
   rate (`pivot / search` for the line follower, `turn` for teleop and the
-  drift test). They show what the running program drives at, using the SPD
-  the hub acknowledged.
+  drift test). They show what the running program drives at, using the
+  values the hub acknowledged.
+- The tuning panel shows one program's knobs at a time, with `Line / Teleop /
+  Drift` buttons (small role, checked = accent) next to the caption.
 - Device names are shortened in the port table (`Motor`, `Ultrasonic`); the
   full name is the tooltip.
 

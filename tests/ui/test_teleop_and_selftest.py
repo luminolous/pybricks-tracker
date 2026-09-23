@@ -50,8 +50,12 @@ async def test_drive_button_starts_teleop(window) -> None:
     assert window.teleop_active()
     assert window.drive_button.isChecked()
     assert window.tuning.mode == "speed"
+    assert window.tuning.group == "teleop"
     assert window.tuning.rows["SPD"].slider.isEnabled()
+    assert window.tuning.rows["TURN"].slider.isEnabled()
     assert not window.tuning.rows["KP"].slider.isEnabled()
+    assert window.tuning.rows["KP"].slider.isHidden()
+    assert not window.tuning.group_buttons["line"].isEnabled()  # the program owns the group
 
 
 async def test_spd_slider_sets_teleop_speed_live(window) -> None:
@@ -123,7 +127,9 @@ async def test_readout_shows_teleop_speed(window) -> None:
     await driving(window)
     window._tick_ui()
     assert window.readouts["speed"].text() == "100"
-    assert window.readouts["turn"].text() == "360"
-    window.tuning.rows["SPD"].set_value(40)
+    assert window.readouts["turn"].text() == "180"
+    window.tuning.rows["TURN"].set_value(90)
     window._tick_ui()
-    assert window.readouts["turn"].text() == "144"
+    assert window.readouts["turn"].text() == "90"
+    assert window.teleop.turn_deg_s == 90
+    assert window.readouts["speed"].text() == "100"  # SPD no longer drives the turn

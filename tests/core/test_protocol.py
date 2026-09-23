@@ -17,6 +17,7 @@ from app.core.protocol import (
     decode_line,
     device_type,
     encode_command,
+    parse_ack,
 )
 
 
@@ -123,6 +124,8 @@ def test_malformed_t_and_e_return_none(line: str) -> None:
 def test_encode_commands() -> None:
     assert encode_command("KP", -1.8) == "KP,-1.8"
     assert encode_command("SPD", 70.0) == "SPD,70"
+    assert encode_command("PIV", 180.0) == "PIV,180"
+    assert encode_command("SRCH", 150.0) == "SRCH,150"
     assert encode_command("THR", 50) == "THR,50"
     assert encode_command("MODE", "STOP") == "MODE,STOP"
     assert encode_command("HB") == "HB"
@@ -155,3 +158,12 @@ def test_decode_detail() -> None:
 )
 def test_malformed_detail_returns_none(line: str) -> None:
     assert decode_line(line) is None
+
+
+def test_pivot_and_search_acks() -> None:
+    # real sample: the hub prints the float it parsed
+    record = decode_line("E,ACK,900,0.0,0.0,PIV:240.0")
+    assert parse_ack(record.detail) == ("PIV", 240.0)
+    assert parse_ack("SRCH:150.0") == ("SRCH", 150.0)
+    assert parse_ack("SRCH:fast") is None  # malformed value
+    assert parse_ack("TURN:90.0") is None  # app-side knob, never acknowledged

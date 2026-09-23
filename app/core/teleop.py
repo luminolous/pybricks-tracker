@@ -11,7 +11,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
-from app.core.config import MAX_SPEED_MM_S, TuningParams, turn_rate_deg_s
+from app.core.config import MAX_SPEED_MM_S, MAX_TURN_DEG_S, TuningParams
 from app.core.protocol import encode_drive
 
 logger = logging.getLogger(__name__)
@@ -24,8 +24,9 @@ class TeleopDriver:
     def __init__(self, send: Callable[[str], Awaitable[None]]) -> None:
         self._send = send
         self.keys: set[str] = set()
-        # SPD from the tuning panel, the same speed the line follower drives at.
+        # SPD and TURN from the tuning panel, changed live.
         self.speed_mm_s = TuningParams().base_speed_mm_s
+        self.turn_deg_s = TuningParams().teleop_turn_deg_s
         self._last_sent: tuple[float, float] | None = None
 
     def press(self, key: str) -> bool:
@@ -50,7 +51,8 @@ class TeleopDriver:
         forward = ("W" in self.keys) - ("S" in self.keys)
         right = ("D" in self.keys) - ("A" in self.keys)
         speed = min(MAX_SPEED_MM_S, abs(self.speed_mm_s))
-        return forward * speed, right * turn_rate_deg_s(speed)
+        turn = min(MAX_TURN_DEG_S, abs(self.turn_deg_s))
+        return forward * speed, right * turn
 
     async def tick(self) -> str | None:
         """Send the setpoint if it moves the robot or just returned to rest."""

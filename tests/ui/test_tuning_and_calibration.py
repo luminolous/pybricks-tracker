@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 from pybricksdev.ble.pybricks import StatusFlag
@@ -41,7 +42,7 @@ async def running(
 
 
 def tuning_writes(w) -> list[str]:
-    return [c for c in w.fakes.hub.written if c.split(",")[0] in ("KP", "KD", "SPD")]
+    return [c for c in w.fakes.hub.written if c.split(",")[0] in ("KP", "KD", "SPD", "PIV", "SRCH")]
 
 
 # -- panel -------------------------------------------------------------------
@@ -65,7 +66,16 @@ def test_set_values_is_silent(qapp) -> None:
     panel.changed.connect(lambda k, v: seen.append(k))
     panel.set_values(TuningParams(kp=-3.0, kd=-6.0, base_speed_mm_s=120))
     assert seen == []
-    assert panel.values() == {"kp": -3.0, "kd": -6.0, "base_speed_mm_s": 120}
+    assert panel.values() == {
+        "kp": -3.0,
+        "kd": -6.0,
+        "base_speed_mm_s": 120,
+        "pivot_deg_s": 180,
+        "search_deg_s": 150,
+        "teleop_turn_deg_s": 180,
+        "drift_speed_mm_s": 150,
+        "drift_turn_deg_s": 90,
+    }
     assert panel.rows["SPD"].slider.value() == 24
 
 
@@ -74,9 +84,28 @@ def test_modes_enable_and_hint(qapp) -> None:
     for mode, enabled in (("config", True), ("waiting", False), ("live", True), ("off", False)):
         panel.set_mode(mode)
         assert panel.rows["KD"].slider.isEnabled() is enabled
-    panel.set_mode("speed")  # teleop: SPD only
-    assert panel.rows["SPD"].slider.isEnabled()
-    assert not panel.rows["KD"].slider.isEnabled()
+
+    panel.set_mode("config")
+    groups = {
+        "line": {"KP", "KD", "SPD", "PIV", "SRCH"},
+        "teleop": {"SPD", "TURN"},
+        "drift": {"DSPD", "DTRN"},
+    }
+    for group, keys in groups.items():
+        panel.group_buttons[group].click()
+        assert panel.group == group
+        shown = {k for k, row in panel.rows.items() if not row.slider.isHidden()}
+        assert shown == keys
+
+
+def test_group_buttons_lock_while_a_program_runs(qapp) -> None:
+    panel = TuningPanel()
+    panel.set_group("teleop")
+    panel.set_mode("speed")
+    assert not panel.group_buttons["line"].isEnabled()
+    assert panel.rows["TURN"].slider.isEnabled()
+    panel.set_mode("config")
+    assert panel.group_buttons["drift"].isEnabled()
 
 
 # -- live flow ----------------------------------------------------------------
@@ -120,7 +149,28 @@ async def test_readout_shows_the_speed_the_hub_acknowledged(window) -> None:
     await asyncio.sleep(0.01)
     window._tick_ui()
     assert window.readouts["speed"].text() == "100"
-    assert window.readouts["turn"].text() == "360 / 300"
+    assert window.readouts["turn"].text() == "180 / 150"  # SPD no longer drives the turns
+
+
+async def test_pivot_and_search_are_sent_live_and_acknowledged(window) -> None:
+    await running(window)
+    assert window.tuning.group == "line"
+    window.tuning.rows["PIV"].set_value(240)
+    window.tuning.rows["SRCH"].set_value(100)
+    await window.tuner.flush()
+    assert sorted(tuning_writes(window)) == ["PIV,240\r\n", "SRCH,100\r\n"]
+    window.fakes.hub.emit(b"E,ACK,900,0.0,0.0,PIV:240.0\nE,ACK,901,0.0,0.0,SRCH:100.0\n")
+    await asyncio.sleep(0.01)
+    window._tick_ui()
+    assert window.tuning.rows["PIV"].ack.text() == "hub 240"
+    assert window.readouts["turn"].text() == "240 / 100"
+
+
+async def test_teleop_only_knobs_are_never_sent_to_the_hub(window) -> None:
+    await running(window)
+    window.tuning.rows["TURN"].set_value(90)  # hidden in the line group, still no write
+    await window.tuner.flush()
+    assert not [c for c in window.fakes.hub.written if c.startswith(("TURN", "DSPD", "DTRN"))]
 
 
 async def test_dropped_write_turns_red(window) -> None:
@@ -134,8 +184,12 @@ async def test_dropped_write_turns_red(window) -> None:
 
 
 async def test_tuning_off_for_drift_test_and_back_to_config_after(window) -> None:
+    window.tuning.rows["DSPD"].set_value(100)
     await running(window, b"R,DRIFT_TEST,1\n", "drift_test", drift="straight")
     assert window.tuning.mode == "off"
+    assert window.tuning.group == "drift"
+    assert not window.tuning.rows["DSPD"].slider.isEnabled()  # locked for the whole test
+    assert "STRAIGHT_SPEED = 100.0" in Path(window.fakes.hub.ran[-1]).read_text(encoding="utf-8")
     assert not window.tuning.rows["KP"].slider.isEnabled()
     window.fakes.hub.status_observable.on_next(StatusFlag(0))
     assert window.tuning.mode == "config"

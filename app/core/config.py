@@ -119,23 +119,9 @@ class RobotGeometry:
     sensor_offset_mm: float = 40.0  # colour sensor ahead of the wheel axis
 
 
-# One speed for every driving mode: SPD (base_speed_mm_s). Turn rates follow
-# it with the original script's ratios, 180 deg/s pivot and 150 deg/s search
-# at 50 mm/s. Teleop turns at the pivot ratio. The drift test keeps fixed
-# speeds so its measurements stay comparable between runs.
-PIVOT_DEG_PER_MM = 3.6
-SEARCH_DEG_PER_MM = 3.0
+# Hub clamps, rendered into every program.
 MAX_TURN_DEG_S = 360
 MAX_SPEED_MM_S = 300
-
-
-DRIFT_SPEED_MM_S = 150  # slow for repeatable wheel slip
-DRIFT_TURN_DEG_S = 90
-
-
-def turn_rate_deg_s(speed_mm_s: float, deg_per_mm: float = PIVOT_DEG_PER_MM) -> float:
-    """Turn rate that goes with a forward speed, capped at MAX_TURN_DEG_S."""
-    return min(MAX_TURN_DEG_S, abs(speed_mm_s) * deg_per_mm)
 
 
 @dataclass(frozen=True)
@@ -150,17 +136,19 @@ class DriveProfile:
 IDLE_PROFILE = DriveProfile("—", "turn °/s", "—")
 
 
-def drive_profile(mode: str | None, speed_mm_s: float) -> DriveProfile:
-    """What the running program drives at. `speed_mm_s` is SPD as the hub has it."""
-    speed = min(MAX_SPEED_MM_S, abs(speed_mm_s))
+def drive_profile(mode: str | None, knobs: Mapping[str, float]) -> DriveProfile:
+    """What the running program drives at, from tuning knob values by key
+    (SPD, PIV, SRCH, TURN, DSPD, DTRN), as the hub has them where it acknowledges."""
+
+    def fmt(key: str) -> str:
+        return f"{knobs[key]:.0f}"
+
     if mode == "line_follower":
-        pivot = turn_rate_deg_s(speed, PIVOT_DEG_PER_MM)
-        search = turn_rate_deg_s(speed, SEARCH_DEG_PER_MM)
-        return DriveProfile(f"{speed:.0f}", "pivot / search °/s", f"{pivot:.0f} / {search:.0f}")
+        return DriveProfile(fmt("SPD"), "pivot / search °/s", f"{fmt('PIV')} / {fmt('SRCH')}")
     if mode == "teleop":
-        return DriveProfile(f"{speed:.0f}", "turn °/s", f"{turn_rate_deg_s(speed):.0f}")
+        return DriveProfile(fmt("SPD"), "turn °/s", fmt("TURN"))
     if mode == "drift_test":
-        return DriveProfile(f"{DRIFT_SPEED_MM_S}", "turn °/s", f"{DRIFT_TURN_DEG_S}")
+        return DriveProfile(fmt("DSPD"), "turn °/s", fmt("DTRN"))
     if mode == "calibrate":
         return DriveProfile("0", "turn °/s", "0")  # holds still
     return IDLE_PROFILE
@@ -173,6 +161,15 @@ class TuningParams:
     kd: float = -5.0
     base_speed_mm_s: float = 50.0
     obstacle_threshold_mm: int = 50
+    # Turn in place on black and sweep for a lost line (PIVOT_RATE 180 and
+    # SEARCH_RATE 150 in the original). Live, like SPD.
+    pivot_deg_s: float = 180.0
+    search_deg_s: float = 150.0
+    # Teleop drives forward at SPD and turns at this rate.
+    teleop_turn_deg_s: float = 180.0
+    # Drift test: fixed for the whole test so runs stay comparable.
+    drift_speed_mm_s: float = 150.0
+    drift_turn_deg_s: float = 90.0
 
 
 @dataclass(frozen=True)

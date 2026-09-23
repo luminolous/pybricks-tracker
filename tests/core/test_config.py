@@ -124,11 +124,19 @@ def test_missing_file_raises_config_error(tmp_path) -> None:
 def test_drive_profile_per_mode() -> None:
     from app.core.config import IDLE_PROFILE, drive_profile
 
-    lf = drive_profile("line_follower", 50)
+    knobs = {"SPD": 50, "PIV": 180, "SRCH": 150, "TURN": 120, "DSPD": 150, "DTRN": 90}
+    lf = drive_profile("line_follower", knobs)
     assert (lf.speed, lf.turn_caption, lf.turn) == ("50", "pivot / search °/s", "180 / 150")
-    tele = drive_profile("teleop", 80)
-    assert (tele.speed, tele.turn) == ("80", "288")
-    assert drive_profile("teleop", 200).turn == "360"  # capped like the hub
-    drift = drive_profile("drift_test", 50)
-    assert (drift.speed, drift.turn) == ("150", "90")  # fixed, SPD ignored
-    assert drive_profile(None, 50) is IDLE_PROFILE
+    tele = drive_profile("teleop", knobs)
+    assert (tele.speed, tele.turn) == ("50", "120")
+    drift = drive_profile("drift_test", knobs)
+    assert (drift.speed, drift.turn) == ("150", "90")
+    assert drive_profile(None, knobs) is IDLE_PROFILE
+
+
+def test_old_presets_get_the_new_speed_defaults() -> None:
+    data = RobotConfig().to_json()
+    for key in ("pivot_deg_s", "search_deg_s", "teleop_turn_deg_s"):
+        del data["tuning"][key]
+    tuning = RobotConfig.from_json(data).tuning
+    assert (tuning.pivot_deg_s, tuning.search_deg_s, tuning.teleop_turn_deg_s) == (180, 150, 180)

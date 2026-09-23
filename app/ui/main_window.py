@@ -78,7 +78,7 @@ from app.ui.port_panel import PortPanel
 from app.ui.replay_bar import BAR_HEIGHT_PX, ReplayBar, fmt_ms
 from app.ui.theme import caption, label, set_prop
 from app.ui.trail_colors import TRAIL_MODES
-from app.ui.tuning_panel import TuningPanel
+from app.ui.tuning_panel import HUB_KEYS, MODE_GROUPS, TuningPanel
 
 logger = logging.getLogger(__name__)
 
@@ -621,6 +621,8 @@ class MainWindow(QMainWindow):
             self.note(str(exc))
             return False
         self._current_mode = mode
+        if mode in MODE_GROUPS:
+            self.tuning.set_group(MODE_GROUPS[mode])
         self._set_tuning_mode("waiting")
         self._ready = None
         self._ready_event.clear()
@@ -686,22 +688,26 @@ class MainWindow(QMainWindow):
             return  # run_program stops it; never send tuning to a mismatched program
         if ready.mode == "TELEOP":
             self.teleop.speed_mm_s = self.tuning.rows["SPD"].value()
-            self._set_tuning_mode("speed")  # SPD rides on every DRV; KP/KD unused
+            self.teleop.turn_deg_s = self.tuning.rows["TURN"].value()
+            self._set_tuning_mode("speed")  # SPD and TURN ride on every DRV
             return
         if ready.mode != "LINE_FOLLOWER":
-            self._set_tuning_mode("off")  # drift test and calibration ignore KP/KD/SPD
+            self._set_tuning_mode("off")  # drift speeds are fixed for the whole test
             return
         # The hub starts with the values rendered into it: already acknowledged.
         self.tuner.reset()
-        for key, row in self.tuning.rows.items():
-            self.tuner.seed(key, row.value())
+        for key in HUB_KEYS:
+            self.tuner.seed(key, self.tuning.rows[key].value())
         self._set_tuning_mode("live")
 
     def _tuning_changed(self, key: str, value: float) -> None:
-        if self._tuning_live:
+        if self._tuning_live and key in HUB_KEYS:
             self.tuner.want(key, value)
+        # the next DRV (<= 100 ms) carries these
         if key == "SPD":
-            self.teleop.speed_mm_s = value  # the next DRV (<= 100 ms) carries it
+            self.teleop.speed_mm_s = value
+        elif key == "TURN":
+            self.teleop.turn_deg_s = value
 
     def show_calibration(self) -> None:
         if self._calibration_dialog is None:
@@ -1101,7 +1107,7 @@ class MainWindow(QMainWindow):
         if self._calibration_dialog is not None and self._calibration_dialog.isVisible():
             self._calibration_dialog.show_live(self.state.reflection)
         if self._tuning_live:
-            for key in self.tuning.rows:
+            for key in HUB_KEYS:
                 self.tuning.show_ack(
                     key, self.tuner.acked(key), self.tuner.pending(key), self.tuner.stale(key)
                 )
@@ -1181,13 +1187,14 @@ class MainWindow(QMainWindow):
     def drive_profile(self) -> DriveProfile:
         if self._replay is not None or not self.conn.program_running:
             return IDLE_PROFILE
-        if self._current_mode == "teleop":
-            speed = self.teleop.speed_mm_s
-        else:
-            # the hub's acknowledged SPD while live, so a lost write shows here
-            acked = self.tuner.acked("SPD") if self._tuning_live else None
-            speed = acked if acked is not None else self.tuning.rows["SPD"].value()
-        return drive_profile(self._current_mode, speed)
+        knobs = self.tuning.knobs()
+        if self._tuning_live:
+            # the hub's acknowledged values, so a lost write shows here
+            for key in HUB_KEYS:
+                acked = self.tuner.acked(key)
+                if acked is not None:
+                    knobs[key] = acked
+        return drive_profile(self._current_mode, knobs)
 
     def _refresh_drive_profile(self) -> None:
         profile = self.drive_profile()

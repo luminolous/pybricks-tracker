@@ -55,6 +55,8 @@ KP = {{ tuning.kp }}
 KD = {{ tuning.kd }}
 BASE_SPEED = {{ tuning.base_speed_mm_s }}
 OBSTACLE_MM = {{ tuning.obstacle_threshold_mm }}
+PIVOT_RATE = {{ tuning.pivot_deg_s }}  # deg/s, line follower turn in place on black
+SEARCH_RATE = {{ tuning.search_deg_s }}  # deg/s, line follower sweep for a lost line
 
 # teleop setpoint (protocol.md, DRV); only teleop.py.j2 drives from it
 DRV_MAX_SPEED = {{ max_speed }}
@@ -211,7 +213,8 @@ def split_once(text):
 
 
 def check_commands():
-    global KP, KD, BASE_SPEED, OBSTACLE_MM, STOPPED, PAUSED, DRV_SPEED, DRV_TURN
+    global KP, KD, BASE_SPEED, OBSTACLE_MM, PIVOT_RATE, SEARCH_RATE
+    global STOPPED, PAUSED, DRV_SPEED, DRV_TURN
     while _poll.poll(0):
         line = usys.stdin.readline().strip()
         if not line:
@@ -228,6 +231,12 @@ def check_commands():
             elif key == "SPD":
                 BASE_SPEED = float(value)
                 emit_e("ACK", "SPD:{}".format(BASE_SPEED))
+            elif key == "PIV":
+                PIVOT_RATE = max(0.0, min(DRV_MAX_TURN, float(value)))
+                emit_e("ACK", "PIV:{}".format(PIVOT_RATE))
+            elif key == "SRCH":
+                SEARCH_RATE = max(0.0, min(DRV_MAX_TURN, float(value)))
+                emit_e("ACK", "SRCH:{}".format(SEARCH_RATE))
             elif key == "THR":
                 OBSTACLE_MM = int(value)
                 emit_e("ACK", "THR:{}".format(OBSTACLE_MM))

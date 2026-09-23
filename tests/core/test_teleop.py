@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from app.core.config import turn_rate_deg_s
 from app.core.protocol import encode_drive
 from app.core.teleop import TeleopDriver
 
-TURN = turn_rate_deg_s(120)  # 360 cap: 3.6 * 120 = 432
+TURN = 180  # TuningParams.teleop_turn_deg_s default
 
 
 def rig() -> tuple[TeleopDriver, list[str]]:
@@ -71,11 +70,13 @@ async def test_failed_write_is_retried_next_tick() -> None:
     assert await d.tick() == "DRV,50,0"  # SPD default
 
 
-def test_speed_follows_spd_with_the_pivot_ratio() -> None:
+def test_speed_and_turn_are_separate_and_capped() -> None:
     d, _ = rig()
     d.speed_mm_s = 50
+    d.turn_deg_s = 90
     d.press("W")
     d.press("D")
-    assert d.setpoint() == (50, 180)  # the line follower pivots at 180 deg/s at 50 mm/s
+    assert d.setpoint() == (50, 90)
     d.speed_mm_s = 500
+    d.turn_deg_s = 900
     assert d.setpoint() == (300, 360)  # capped like the hub

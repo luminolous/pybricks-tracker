@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -263,8 +264,8 @@ def test_original_constants(source: str) -> None:
         "KD = -5.0",
         "BASE_SPEED = 50.0",
         "OBSTACLE_MM = 50",
-        "PIVOT_PER_MM = 3.6",  # 180 deg/s at 50 mm/s, as the original
-        "SEARCH_PER_MM = 3.0",  # 150 deg/s at 50 mm/s
+        "PIVOT_RATE = 180.0",
+        "SEARCH_RATE = 150.0",
         "LOST_MS = 150",
         "SEARCH_DEG = 120",
         "BACKUP_MM = 20",
@@ -274,10 +275,28 @@ def test_original_constants(source: str) -> None:
         assert re.search(rf"^{re.escape(line)}\b", source, re.MULTILINE), line
 
 
-def test_turn_rates_follow_live_spd(source: str) -> None:
-    """SPD changes pivot and search too, not only straight following."""
-    assert "return min(MAX_TURN, abs(BASE_SPEED) * per_mm)" in function(source, "turn_rate")
-    assert "STEER = _search_dir * turn_rate(SEARCH_PER_MM)" in function(source, "search_step")
+def test_pivot_and_search_rates_are_live(source: str) -> None:
+    """PIV and SRCH change the rates mid-run; each applied value is acknowledged."""
+    commands = function(source, "check_commands")
+    assert "PIVOT_RATE = max(0.0, min(DRV_MAX_TURN, float(value)))" in commands
+    assert 'emit_e("ACK", "PIV:{}".format(PIVOT_RATE))' in commands
+    assert "SEARCH_RATE = max(0.0, min(DRV_MAX_TURN, float(value)))" in commands
+    assert 'emit_e("ACK", "SRCH:{}".format(SEARCH_RATE))' in commands
+    assert "global KP, KD, BASE_SPEED, OBSTACLE_MM, PIVOT_RATE, SEARCH_RATE" in commands
+    assert "STEER = _search_dir * SEARCH_RATE" in function(source, "search_step")
+
+
+def test_turn_and_drift_speeds_come_from_the_config() -> None:
+    tuning = TuningParams(
+        pivot_deg_s=200, search_deg_s=120, drift_speed_mm_s=100, drift_turn_deg_s=45
+    )
+    config = replace(RobotConfig(), tuning=tuning)
+    lf = render(config, "line_follower")
+    assert re.search(r"^PIVOT_RATE = 200\b", lf, re.MULTILINE)
+    assert re.search(r"^SEARCH_RATE = 120\b", lf, re.MULTILINE)
+    drift = render(config, "drift_test", drift="straight")
+    assert re.search(r"^STRAIGHT_SPEED = 100\b", drift, re.MULTILINE)
+    assert re.search(r"^TURN_RATE = 45\b", drift, re.MULTILINE)
 
 
 def test_search_backs_up_then_sweeps_by_angle(source: str) -> None:
@@ -295,7 +314,7 @@ def test_search_backs_up_then_sweeps_by_angle(source: str) -> None:
 def test_pivot_and_white_timer_follow_the_original(source: str) -> None:
     control = function(source, "control_step")
     assert "if refl < BLACK_BELOW:" in control
-    assert "STEER = correction_dir(error) * turn_rate(PIVOT_PER_MM)" in control
+    assert "STEER = correction_dir(error) * PIVOT_RATE" in control
     assert "if refl <= WHITE_ABOVE:" in control and "_white_timer.reset()" in control
     assert "elif _white_timer.time() > LOST_MS:" in control
     assert "correction_dir" in function(source, "correction_dir")
