@@ -132,3 +132,30 @@ reported that every one stopped the wheels safely:
 - losing the BLE link (hub watchdog)
 
 **M3 acceptance: PASSED.**
+
+## 2026-09-24 — wiring and motor directions
+
+The robot was rewired and the user confirmed this config drives correctly (W
+forward, turns the right way):
+
+| Port | Device | Role |
+|---|---|---|
+| A | motor | left wheel, `COUNTERCLOCKWISE` |
+| B | ultrasonic | distance, facing forward |
+| D | motor | right wheel, `CLOCKWISE` |
+| F | colour sensor | line, pointing down |
+
+This is the usual Pybricks drive base setup. The first default (left CW,
+right CCW, taken from the original script) reversed both motors: `drive(s, t)`
+became `drive(-s, -t)` physically, so W drove backwards and every turn was
+mirrored. The app defaults now use the wiring above.
+
+Turn sign chain with this wiring, checked in the code:
+
+- `DriveBase.drive(speed, turn)` and `robot.turn(angle)`: positive = right
+  (clockwise from above). Teleop D and route `R` both send positive.
+- `hub.imu.heading()` grows clockwise; the app frame negates it, so a right
+  turn lowers the map heading. Route turns are counted on that sign.
+- KP -1.5 (from the original script) now tracks the line's right edge, so the
+  robot takes right branches by default. The original, with mirrored motors,
+  tracked the left edge with the same KP. Line following works either way.

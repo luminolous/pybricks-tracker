@@ -12,7 +12,8 @@ from app.core.connection import DiscoveredHub, HubConnection
 
 HUB = DiscoveredHub(name="Pybricks Hub", address="AA:BB", rssi_dbm=-50, device=object())
 
-SCAN_OUTPUT = b"R,SCAN,1\nP,A,0\nP,B,0\nP,C,48\nP,D,61\nP,E,62\nP,F,48\nP,DONE,0\n"
+# the real robot: A left motor, B ultrasonic, D right motor, F colour sensor
+SCAN_OUTPUT = b"R,SCAN,1\nP,A,48\nP,B,62\nP,C,0\nP,D,48\nP,E,0\nP,F,61\nP,DONE,0\n"
 
 
 class FakeHub:

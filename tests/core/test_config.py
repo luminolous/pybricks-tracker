@@ -20,13 +20,13 @@ from app.core.protocol import DeviceKind
 
 M = DeviceKind.MOTOR
 EMPTY = DeviceKind.EMPTY
-DEFAULT_DEVICES = {
-    "A": EMPTY,
-    "B": EMPTY,
-    "C": M,
-    "D": DeviceKind.COLOR_SENSOR,
-    "E": DeviceKind.ULTRASONIC_SENSOR,
-    "F": M,
+DEFAULT_DEVICES = {  # the real robot
+    "A": M,
+    "B": DeviceKind.ULTRASONIC_SENSOR,
+    "C": EMPTY,
+    "D": M,
+    "E": EMPTY,
+    "F": DeviceKind.COLOR_SENSOR,
 }
 
 
@@ -43,35 +43,35 @@ def test_requires_scan() -> None:
 
 
 def test_role_on_empty_port() -> None:
-    error = validate_ports(with_("A", Role.AUX_MOTOR), DEFAULT_DEVICES)
-    assert error == "Port A is empty but has the role aux motor."
+    error = validate_ports(with_("C", Role.AUX_MOTOR), DEFAULT_DEVICES)
+    assert error == "Port C is empty but has the role aux motor."
 
 
 def test_wheel_must_be_on_motor_port() -> None:
-    assignments = {**with_("C", Role.UNUSED), "D": PortAssignment(Role.WHEEL_LEFT)}
-    assert validate_ports(assignments, DEFAULT_DEVICES) == "Port D: left wheel needs a motor."
+    assignments = {**with_("A", Role.UNUSED), "F": PortAssignment(Role.WHEEL_LEFT)}
+    assert validate_ports(assignments, DEFAULT_DEVICES) == "Port F: left wheel needs a motor."
 
 
 def test_exactly_one_left_wheel() -> None:
-    error = validate_ports(with_("C", Role.UNUSED), DEFAULT_DEVICES)
+    error = validate_ports(with_("A", Role.UNUSED), DEFAULT_DEVICES)
     assert error == "Assign exactly one left wheel (now 0)."
 
 
 def test_two_right_wheels_rejected() -> None:
-    devices = {**DEFAULT_DEVICES, "A": M}
-    error = validate_ports(with_("A", Role.WHEEL_RIGHT), devices)
+    devices = {**DEFAULT_DEVICES, "C": M}
+    error = validate_ports(with_("C", Role.WHEEL_RIGHT), devices)
     assert error == "Assign exactly one right wheel (now 2)."
 
 
 def test_at_most_one_line_sensor() -> None:
-    devices = {**DEFAULT_DEVICES, "B": DeviceKind.COLOR_SENSOR}
-    error = validate_ports(with_("B", Role.LINE_SENSOR), devices)
+    devices = {**DEFAULT_DEVICES, "E": DeviceKind.COLOR_SENSOR}
+    error = validate_ports(with_("E", Role.LINE_SENSOR), devices)
     assert error == "Assign at most one line sensor."
 
 
 def test_unplugged_sensor_after_rescan() -> None:
-    devices = {**DEFAULT_DEVICES, "D": EMPTY}
-    assert validate_ports(DEFAULT_ASSIGNMENTS, devices) == "Port D is empty but has the role line."
+    devices = {**DEFAULT_DEVICES, "F": EMPTY}
+    assert validate_ports(DEFAULT_ASSIGNMENTS, devices) == "Port F is empty but has the role line."
 
 
 # -- RobotConfig JSON ---------------------------------------------------------
@@ -90,9 +90,12 @@ def test_json_roundtrip(tmp_path) -> None:
 
 def test_default_config_matches_claude_md() -> None:
     config = RobotConfig()
-    assert config.port_for(Role.WHEEL_LEFT) == ("C", PortAssignment(Role.WHEEL_LEFT))
-    right = config.port_for(Role.WHEEL_RIGHT)
-    assert right is not None and right[1].direction is Direction.COUNTERCLOCKWISE
+    # the real wiring (2026-09-24): left CCW, right CW, as Pybricks drive bases expect
+    left = PortAssignment(Role.WHEEL_LEFT, Direction.COUNTERCLOCKWISE)
+    assert config.port_for(Role.WHEEL_LEFT) == ("A", left)
+    assert config.port_for(Role.WHEEL_RIGHT) == ("D", PortAssignment(Role.WHEEL_RIGHT))
+    assert config.port_for(Role.DISTANCE_SENSOR)[0] == "B"
+    assert config.port_for(Role.LINE_SENSOR)[0] == "F"
     assert config.calibration.edge == 52
 
 

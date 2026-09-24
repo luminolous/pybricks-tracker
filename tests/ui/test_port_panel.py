@@ -15,7 +15,7 @@ def scanned(*lines: str) -> PortScan:
     return scan
 
 
-FULL = ("P,A,0", "P,B,0", "P,C,48", "P,D,61", "P,E,62", "P,F,48", "P,DONE,0")
+FULL = ("P,A,48", "P,B,62", "P,C,0", "P,D,48", "P,E,0", "P,F,61", "P,DONE,0")  # the real robot
 
 
 def test_unscanned_panel_asks_for_scan(qapp) -> None:
@@ -27,8 +27,8 @@ def test_unscanned_panel_asks_for_scan(qapp) -> None:
 def test_scan_fills_rows_and_default_config_is_valid(qapp) -> None:
     panel = PortPanel()
     panel.apply_scan(scanned(*FULL))
-    assert panel.rows["A"].device.text() == "empty"
-    assert panel.rows["D"].device.text() == "Color sensor"
+    assert panel.rows["C"].device.text() == "empty"
+    assert panel.rows["F"].device.text() == "Color sensor"
     assert panel.validation_error() is None
     assert panel.validation.text() == "Config valid. Ready to run."
 
@@ -36,9 +36,9 @@ def test_scan_fills_rows_and_default_config_is_valid(qapp) -> None:
 def test_rescan_after_unplugging_shows_change(qapp) -> None:
     panel = PortPanel()
     panel.apply_scan(scanned(*FULL))
-    panel.apply_scan(scanned("P,A,0", "P,B,0", "P,C,48", "P,D,0", "P,E,62", "P,F,48", "P,DONE,0"))
-    assert panel.rows["D"].device.text() == "empty"
-    assert panel.validation_error() == "Port D is empty but has the role line."
+    panel.apply_scan(scanned("P,A,48", "P,B,62", "P,C,0", "P,D,48", "P,E,0", "P,F,0", "P,DONE,0"))
+    assert panel.rows["F"].device.text() == "empty"
+    assert panel.validation_error() == "Port F is empty but has the role line."
 
 
 def test_role_change_revalidates_and_emits(qapp) -> None:
@@ -46,7 +46,7 @@ def test_role_change_revalidates_and_emits(qapp) -> None:
     panel.apply_scan(scanned(*FULL))
     emitted = []
     panel.changed.connect(lambda: emitted.append(True))
-    row = panel.rows["C"]
+    row = panel.rows["A"]
     row.role.setCurrentIndex(row.role.findData(Role.UNUSED))
     assert emitted
     assert panel.validation_error() == "Assign exactly one left wheel (now 0)."
@@ -54,5 +54,5 @@ def test_role_change_revalidates_and_emits(qapp) -> None:
 
 def test_direction_only_for_motor_roles(qapp) -> None:
     panel = PortPanel()
-    assert panel.rows["D"].direction.isHidden()
-    assert not panel.rows["C"].direction.isHidden()
+    assert panel.rows["F"].direction.isHidden()
+    assert not panel.rows["A"].direction.isHidden()

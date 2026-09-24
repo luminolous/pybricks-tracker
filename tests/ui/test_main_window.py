@@ -70,8 +70,8 @@ async def test_scan_fills_ports_across_split_chunks(window) -> None:
     await window.conn.connect(HUB)
     assert await window.scan_ports()
     panel = window.port_panel
-    assert panel.rows["D"].device.text() == "Color sensor"
-    assert panel.rows["E"].device.text() == "Ultrasonic"
+    assert panel.rows["F"].device.text() == "Color sensor"
+    assert panel.rows["B"].device.text() == "Ultrasonic"
     assert panel.validation_error() is None
     assert "P,DONE,0" in window.console.visible_text()
     assert window.run_state.text() == "RUNNING"
@@ -82,10 +82,10 @@ async def test_rescan_shows_unplugged_sensor(window) -> None:
     window.fakes.program_output[:] = [SCAN_OUTPUT]
     await window.scan_ports()
     window.fakes.hub.status_observable.on_next(StatusFlag(0))  # program ended
-    window.fakes.program_output[:] = [SCAN_OUTPUT.replace(b"P,D,61", b"P,D,0")]
+    window.fakes.program_output[:] = [SCAN_OUTPUT.replace(b"P,F,61", b"P,F,0")]
     await window.scan_ports()
-    assert window.port_panel.rows["D"].device.text() == "empty"
-    assert window.port_panel.validation_error() == "Port D is empty but has the role line."
+    assert window.port_panel.rows["F"].device.text() == "empty"
+    assert window.port_panel.validation_error() == "Port F is empty but has the role line."
 
 
 async def test_scan_timeout_is_reported(window, monkeypatch) -> None:

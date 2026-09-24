@@ -110,10 +110,10 @@ def test_commands_reset_watchdog_clock(source: str) -> None:
 
 
 def test_renders_config_values(source: str) -> None:
-    assert "Motor(Port.C, Direction.CLOCKWISE)" in source
-    assert "Motor(Port.F, Direction.COUNTERCLOCKWISE)" in source
-    assert "ColorSensor(Port.D)" in source
-    assert "UltrasonicSensor(Port.E)" in source
+    assert "Motor(Port.A, Direction.COUNTERCLOCKWISE)" in source
+    assert "Motor(Port.D, Direction.CLOCKWISE)" in source
+    assert "ColorSensor(Port.F)" in source
+    assert "UltrasonicSensor(Port.B)" in source
     assert "wheel_diameter=56.0" in source
     assert "KP = -1.5" in source
     assert "EDGE = 52" in source

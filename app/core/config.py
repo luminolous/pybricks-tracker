@@ -57,14 +57,17 @@ class PortAssignment:
     direction: Direction = Direction.CLOCKWISE
 
 
-# Default robot from CLAUDE.md, to be confirmed by calibration.
+# The real robot's wiring, confirmed on 2026-09-24. Left CCW / right CW is the
+# usual Pybricks drive base setup: with it, positive speed drives forward and
+# positive turn rate turns right. The first guess (left CW, right CCW) drove
+# backwards and mirrored every turn.
 DEFAULT_ASSIGNMENTS: dict[str, PortAssignment] = {
-    "A": PortAssignment(),
-    "B": PortAssignment(),
-    "C": PortAssignment(Role.WHEEL_LEFT, Direction.CLOCKWISE),
-    "D": PortAssignment(Role.LINE_SENSOR),
-    "E": PortAssignment(Role.DISTANCE_SENSOR),
-    "F": PortAssignment(Role.WHEEL_RIGHT, Direction.COUNTERCLOCKWISE),
+    "A": PortAssignment(Role.WHEEL_LEFT, Direction.COUNTERCLOCKWISE),
+    "B": PortAssignment(Role.DISTANCE_SENSOR),
+    "C": PortAssignment(),
+    "D": PortAssignment(Role.WHEEL_RIGHT, Direction.CLOCKWISE),
+    "E": PortAssignment(),
+    "F": PortAssignment(Role.LINE_SENSOR),
 }
 
 
