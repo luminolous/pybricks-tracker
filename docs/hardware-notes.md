@@ -159,3 +159,28 @@ Turn sign chain with this wiring, checked in the code:
 - KP -1.5 (from the original script) now tracks the line's right edge, so the
   robot takes right branches by default. The original, with mirrored motors,
   tracked the left edge with the same KP. Line following works either way.
+
+## 2026-09-24 — first line follower runs: search loop after every pivot
+
+Two recorded runs (`sessions/20260924-044427_line_follower.jsonl`,
+`20260924-044632_line_follower.jsonl`), SPD 50, KP -1.5, KD -5, PIV 180,
+calibration black 9 / white 74 (edge 41), no route. The user saw the robot
+"find the line, then back up and turn" over and over.
+
+- 35 `LOST` events in the two runs; SEARCH was the most common state in the
+  second run (264 T lines, against 114 FOLLOW).
+- The cycle, every time: `PIVOT` on black (turn right at 180 deg/s), then
+  `FOLLOW` with a left correction, but the heading kept going right by 10-20
+  degrees in the next 150 ms (40 transitions measured). The sensor ran deep
+  into white, the 150 ms lost timer fired, the robot backed up 20 mm and swept.
+- Difference from the original script: it never called `use_gyro(True)`; the
+  line follower template did. Fix: the line follower now drives with
+  `use_gyro(False)`. Map heading and route turns still read `hub.imu`.
+- Loop dt stayed 10-11 ms, so the loop was not the cause.
+- White read 57-74 on the mat and 88-90 where the second run started: the
+  surface varies (printed graphics on the mat). Recalibrate on the track.
+- `OBS` fired at 40-44 mm five times with THR 50: something was close to the
+  ultrasonic sensor; worth watching.
+
+To confirm on the robot: the heading should stop turning within a few degrees
+once PIVOT ends. If it still overshoots, lower PIV (live) before anything else.

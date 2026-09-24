@@ -40,7 +40,7 @@ robot = DriveBase(
 {% if use_gyro %}
 robot.use_gyro(True)
 {% else %}
-robot.use_gyro(False)  # this test measures wheel geometry; the gyro would hide it
+robot.use_gyro(False)  # line follower: steering lag; turn drift test: measures the wheels
 {% endif %}
 {% if line %}
 line_sensor = ColorSensor(Port.{{ line.port }})

@@ -166,6 +166,13 @@ def test_turn_test_runs_with_gyro_off() -> None:
     assert "robot.use_gyro(True)" in render(DEFAULT, "drift_test", drift="straight")
 
 
+def test_line_follower_drives_without_gyro_control(source: str) -> None:
+    # use_gyro(True) made the robot overshoot after every pivot (2026-09-24)
+    assert "robot.use_gyro(False)" in source
+    assert "return -hub.imu.heading()" in source  # heading still from the IMU
+    assert "robot.use_gyro(True)" in render(DEFAULT, "teleop")
+
+
 def test_square_renders_four_sides() -> None:
     source = render(DEFAULT, "drift_test", drift="square")
     assert source.count('("S", 500),') == 4
@@ -237,7 +244,7 @@ def test_drive_setpoint_is_clamped_on_the_hub(source: str) -> None:
     assert 'elif key == "DRV":' in check
     assert "max(-DRV_MAX_SPEED, min(DRV_MAX_SPEED, float(speed)))" in check
     assert "_drv_timer.reset()" in check
-    assert "DRV_MAX_SPEED = 300" in source and "DRV_MAX_TURN = 360" in source
+    assert "DRV_MAX_SPEED = 1000" in source and "DRV_MAX_TURN = 360" in source
 
 
 def test_teleop_has_a_dead_man_and_obstacle_stop() -> None:

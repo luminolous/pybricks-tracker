@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.core.config import MAX_ROUTE_STEPS, TuningParams
+from app.core.config import MAX_ROUTE_STEPS, MAX_SPEED_MM_S, MAX_TURN_DEG_S, TuningParams
 from app.ui.theme import caption, label, set_prop
 
 
@@ -56,17 +56,19 @@ class Knob:
 
 
 DEG_S = " °/s"
+SPD_MAX = float(MAX_SPEED_MM_S)
+TRN_MAX = float(MAX_TURN_DEG_S)
 KNOBS = (
     Knob("kp", "KP", -10.0, 10.0, 0.05, 2),
     Knob("kd", "KD", -20.0, 20.0, 0.1, 2),
-    Knob("base_speed_mm_s", "SPD", 0.0, 300.0, 5.0, 0, " mm/s", frozenset({"line", "teleop"})),
-    Knob("pivot_deg_s", "PIV", 10.0, 360.0, 5.0, 0, DEG_S),
-    Knob("search_deg_s", "SRCH", 10.0, 360.0, 5.0, 0, DEG_S),
+    Knob("base_speed_mm_s", "SPD", 0.0, SPD_MAX, 5.0, 0, " mm/s", frozenset({"line", "teleop"})),
+    Knob("pivot_deg_s", "PIV", 10.0, TRN_MAX, 5.0, 0, DEG_S),
+    Knob("search_deg_s", "SRCH", 10.0, TRN_MAX, 5.0, 0, DEG_S),
     Knob("obstacle_threshold_mm", "THR", 20.0, 300.0, 5.0, 0, " mm", integer=True),
     Knob("finish_mm", "FIN", 0.0, 5000.0, 10.0, 0, " mm"),
-    Knob("teleop_turn_deg_s", "TURN", 10.0, 360.0, 5.0, 0, DEG_S, frozenset({"teleop"}), False),
-    Knob("drift_speed_mm_s", "DSPD", 10.0, 300.0, 5.0, 0, " mm/s", frozenset({"drift"}), False),
-    Knob("drift_turn_deg_s", "DTRN", 10.0, 360.0, 5.0, 0, DEG_S, frozenset({"drift"}), False),
+    Knob("teleop_turn_deg_s", "TURN", 10.0, TRN_MAX, 5.0, 0, DEG_S, frozenset({"teleop"}), False),
+    Knob("drift_speed_mm_s", "DSPD", 10.0, SPD_MAX, 5.0, 0, " mm/s", frozenset({"drift"}), False),
+    Knob("drift_turn_deg_s", "DTRN", 10.0, TRN_MAX, 5.0, 0, DEG_S, frozenset({"drift"}), False),
 )
 HUB_KEYS = tuple(k.key for k in KNOBS if k.hub)
 GROUPS = {"line": "Line", "teleop": "Teleop", "drift": "Drift"}

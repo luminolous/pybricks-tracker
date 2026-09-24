@@ -77,6 +77,6 @@ def test_speed_and_turn_are_separate_and_capped() -> None:
     d.press("W")
     d.press("D")
     assert d.setpoint() == (50, 90)
-    d.speed_mm_s = 500
-    d.turn_deg_s = 900
-    assert d.setpoint() == (300, 360)  # capped like the hub
+    d.speed_mm_s = 1500
+    d.turn_deg_s = 1200
+    assert d.setpoint() == (1000, 360)  # capped like the hub

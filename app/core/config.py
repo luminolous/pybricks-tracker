@@ -135,9 +135,13 @@ def route_error(route: str) -> str | None:
     return None
 
 
-# Hub clamps, rendered into every program.
+# Hub clamps, rendered into every program, and the slider limits. Speed raised
+# to 1000 on request (2026-09-24). The motors top out well below that: about
+# 1000 deg/s at the wheel, so ~490 mm/s with 56 mm wheels. How the firmware
+# treats a request above that is not yet checked on the hub (hub-programs.md,
+# open questions).
 MAX_TURN_DEG_S = 360
-MAX_SPEED_MM_S = 300
+MAX_SPEED_MM_S = 1000
 
 
 @dataclass(frozen=True)

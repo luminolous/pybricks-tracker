@@ -36,6 +36,12 @@ S_EVERY_LOOPS = 100  # S at 1 Hz
 DISTANCE_EVERY_LOOPS = 10  # ultrasonic at 10 Hz (hub-programs.md)
 
 MODES = ("line_follower", "drift_test", "calibrate", "teleop")
+# Drive base heading control without the gyro. The line follower steers from
+# the line sensor every 10 ms; with use_gyro(True) the robot kept turning
+# 10-20 degrees after every pivot (recorded 2026-09-24), ran off the edge and
+# started a search. The original script never used the gyro. Map heading and
+# route turns still read hub.imu directly, so they are unaffected.
+NO_GYRO_MODES = frozenset({"line_follower"})
 NEEDS_LINE_SENSOR = ("line_follower", "calibrate")
 
 
@@ -109,7 +115,7 @@ def render(config: RobotConfig, mode: str, drift: str | None = None) -> str:
         "t_every": T_EVERY_LOOPS,
         "s_every": S_EVERY_LOOPS,
         "d_every": D_EVERY_LOOPS,
-        "use_gyro": drift_test.use_gyro if drift_test else True,
+        "use_gyro": drift_test.use_gyro if drift_test else mode not in NO_GYRO_MODES,
         "drift": drift_test,
         "distance_every": DISTANCE_EVERY_LOOPS,
         "max_speed": MAX_SPEED_MM_S,
