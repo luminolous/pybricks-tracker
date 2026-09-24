@@ -222,3 +222,20 @@ robot look like it reversed every time it flipped between black and white.
 KP sign and the edge (with the real wiring): negative KP turns right on black
 and left on white, so the robot runs along the line's right edge, black on
 its left. Positive KP runs the left edge.
+
+## 2026-09-25 — review of the arc-turn runs
+
+Recordings `20260924-0502..0525`, the last ones with INNER 20 at SPD 250.
+
+- The LOST_MM fix worked: a 60 s run at SPD 160 (still pivoting) had 4 LOST,
+  against 17 in 30 s before.
+- At SPD 250 the arc runs lost the line often (19 LOST in 41 s). The robot
+  reached only ~60-65 % of the commanded turn rate (motor acceleration), and
+  moves 150-250 mm/s forward. Suggested SPD 100-150 for now.
+- On full white the PD turned at KP * error = 73 deg/s, on black at the full
+  102 deg/s: coming back from white was slower than leaving black, and nearly
+  every LOST started there. Full white now gets the same sharpest arc as full
+  black (state PIVOT, hub light green); PD only works in the grey band.
+- One 13 s stretch read reflection 0 with the heading wandering while a right
+  turn was commanded: the robot was lifted. Reflection 0 means no surface
+  under the sensor, which the line follower takes as black.

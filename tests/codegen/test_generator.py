@@ -321,7 +321,8 @@ def test_search_sweeps_forward_by_angle_without_backing_up(source: str) -> None:
 
 def test_turns_never_run_a_wheel_backwards(source: str) -> None:
     control = function(source, "control_step")
-    # on black: the sharpest arc, inner wheel at INNER_PCT of the outer one
+    # full black or full white: the sharpest arc, inner wheel at INNER_PCT
+    assert "if refl < BLACK_BELOW or refl > WHITE_ABOVE:" in control
     assert "STEER = correction_dir(error) * arc_turn(INNER_PCT / 100)" in control
     # PD on the edge never turns sharper than that
     assert "limit = arc_turn(INNER_PCT / 100)" in control
@@ -338,7 +339,7 @@ def test_turns_never_run_a_wheel_backwards(source: str) -> None:
 
 def test_pivot_and_white_timer_follow_the_original(source: str) -> None:
     control = function(source, "control_step")
-    assert "if refl < BLACK_BELOW:" in control
+    assert "if refl < BLACK_BELOW or refl > WHITE_ABOVE:" in control
     assert "STEER = correction_dir(error) * arc_turn(INNER_PCT / 100)" in control
     assert "if refl <= WHITE_ABOVE:\n        on_line()" in control
     # lost needs time AND forward travel: swinging back after a pivot is not lost
