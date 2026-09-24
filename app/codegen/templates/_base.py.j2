@@ -55,7 +55,7 @@ KP = {{ tuning.kp }}
 KD = {{ tuning.kd }}
 BASE_SPEED = {{ tuning.base_speed_mm_s }}
 OBSTACLE_MM = {{ tuning.obstacle_threshold_mm }}
-PIVOT_RATE = {{ tuning.pivot_deg_s }}  # deg/s, line follower turn in place on black
+INNER_PCT = {{ tuning.inner_pct }}  # line follower turn on black: inner wheel % of outer
 SEARCH_RATE = {{ tuning.search_deg_s }}  # deg/s, line follower sweep for a lost line
 FINISH_MM = {{ tuning.finish_mm }}  # line follower: route end to finish, minimum mm
 
@@ -214,7 +214,7 @@ def split_once(text):
 
 
 def check_commands():
-    global KP, KD, BASE_SPEED, OBSTACLE_MM, PIVOT_RATE, SEARCH_RATE, FINISH_MM
+    global KP, KD, BASE_SPEED, OBSTACLE_MM, INNER_PCT, SEARCH_RATE, FINISH_MM
     global STOPPED, PAUSED, DRV_SPEED, DRV_TURN
     while _poll.poll(0):
         line = usys.stdin.readline().strip()
@@ -232,9 +232,9 @@ def check_commands():
             elif key == "SPD":
                 BASE_SPEED = float(value)
                 emit_e("ACK", "SPD:{}".format(BASE_SPEED))
-            elif key == "PIV":
-                PIVOT_RATE = max(0.0, min(DRV_MAX_TURN, float(value)))
-                emit_e("ACK", "PIV:{}".format(PIVOT_RATE))
+            elif key == "INNER":
+                INNER_PCT = max(0.0, min(100.0, float(value)))
+                emit_e("ACK", "INNER:{}".format(INNER_PCT))
             elif key == "SRCH":
                 SEARCH_RATE = max(0.0, min(DRV_MAX_TURN, float(value)))
                 emit_e("ACK", "SRCH:{}".format(SEARCH_RATE))

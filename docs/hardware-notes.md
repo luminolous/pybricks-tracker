@@ -201,3 +201,24 @@ Fix: lost now needs 150 ms on white **and** 30 mm of forward travel on white
 (`LOST_MM`). Swinging back after a pivot barely moves the robot forward; a
 real line end or 90 degree corner does. `use_gyro(False)` stays, as in the
 original script.
+
+Second change, on request: no wheel runs backwards in the line follower. The
+pivot in place (one wheel back) and the 20 mm back-up before a search made the
+robot look like it reversed every time it flipped between black and white.
+
+- Every turn keeps the outer wheel at SPD and only slows the inner one.
+- On black: the sharpest turn, inner wheel at INNER % of SPD (default 20),
+  both forward. At SPD 50 and a 112 mm axle track that is ~20 deg/s (the old
+  pivot was 180). `INNER` replaces the old `PIV` command and slider.
+- FOLLOW: the PD turn rate is capped at that same turn, so black always turns
+  hardest. Without a wheel going backwards the turn rate is bounded by
+  SPD / axle track: raise SPD or lower INNER for sharper corners.
+- Search: no back-up; it swings on the stopped inner wheel at SRCH (default
+  now 60 deg/s, ~59 mm/s forward). Old presets keep their SRCH 150, which
+  swings at ~150 mm/s: set it back to ~60.
+- The wall fallback turn (route) still turns in place, with the robot stopped
+  in front of the wall.
+
+KP sign and the edge (with the real wiring): negative KP turns right on black
+and left on white, so the robot runs along the line's right edge, black on
+its left. Positive KP runs the left edge.

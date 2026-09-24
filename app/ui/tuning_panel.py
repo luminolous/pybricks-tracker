@@ -1,7 +1,7 @@
 """Tuning knobs: slider plus exact-entry field, and the value the hub acknowledged.
 
 Each program shows only the knobs it uses (its group):
-- line: KP, KD, SPD, PIV (pivot), SRCH (search), THR (wall distance), FIN
+- line: KP, KD, SPD, INNER (inner wheel % on black), SRCH (search), THR (wall distance), FIN
   (route end to finish), sent live and acknowledged; plus the route, a row of
   L/R turn buttons rendered into the program at Run
 - teleop: SPD, TURN, applied in the app (every DRV carries them)
@@ -62,7 +62,7 @@ KNOBS = (
     Knob("kp", "KP", -10.0, 10.0, 0.05, 2),
     Knob("kd", "KD", -20.0, 20.0, 0.1, 2),
     Knob("base_speed_mm_s", "SPD", 0.0, SPD_MAX, 5.0, 0, " mm/s", frozenset({"line", "teleop"})),
-    Knob("pivot_deg_s", "PIV", 10.0, TRN_MAX, 5.0, 0, DEG_S),
+    Knob("inner_pct", "INNER", 0.0, 100.0, 5.0, 0, " %"),
     Knob("search_deg_s", "SRCH", 10.0, TRN_MAX, 5.0, 0, DEG_S),
     Knob("obstacle_threshold_mm", "THR", 20.0, 300.0, 5.0, 0, " mm", integer=True),
     Knob("finish_mm", "FIN", 0.0, 5000.0, 10.0, 0, " mm"),
@@ -314,7 +314,7 @@ class TuningPanel(QFrame):
             row.spin.blockSignals(False)
 
     def knobs(self) -> dict[str, float]:
-        """Protocol key -> value, e.g. {"SPD": 50.0, "PIV": 180.0}."""
+        """Protocol key -> value, e.g. {"SPD": 50.0, "INNER": 20.0}."""
         return {key: row.value() for key, row in self.rows.items()}
 
     def set_group(self, group: str) -> None:

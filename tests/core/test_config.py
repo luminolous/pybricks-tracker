@@ -127,9 +127,9 @@ def test_missing_file_raises_config_error(tmp_path) -> None:
 def test_drive_profile_per_mode() -> None:
     from app.core.config import IDLE_PROFILE, drive_profile
 
-    knobs = {"SPD": 50, "PIV": 180, "SRCH": 150, "TURN": 120, "DSPD": 150, "DTRN": 90}
+    knobs = {"SPD": 50, "INNER": 20, "SRCH": 60, "TURN": 120, "DSPD": 150, "DTRN": 90}
     lf = drive_profile("line_follower", knobs)
-    assert (lf.speed, lf.turn_caption, lf.turn) == ("50", "pivot / search °/s", "180 / 150")
+    assert (lf.speed, lf.turn_caption, lf.turn) == ("50", "inner % / search °/s", "20 / 60")
     tele = drive_profile("teleop", knobs)
     assert (tele.speed, tele.turn) == ("50", "120")
     drift = drive_profile("drift_test", knobs)
@@ -139,10 +139,13 @@ def test_drive_profile_per_mode() -> None:
 
 def test_old_presets_get_the_new_speed_defaults() -> None:
     data = RobotConfig().to_json()
-    for key in ("pivot_deg_s", "search_deg_s", "teleop_turn_deg_s"):
+    for key in ("inner_pct", "search_deg_s", "teleop_turn_deg_s"):
         del data["tuning"][key]
     tuning = RobotConfig.from_json(data).tuning
-    assert (tuning.pivot_deg_s, tuning.search_deg_s, tuning.teleop_turn_deg_s) == (180, 150, 180)
+    assert (tuning.inner_pct, tuning.search_deg_s, tuning.teleop_turn_deg_s) == (20, 60, 180)
+    # a preset from before the arc turns still loads; its pivot rate is ignored
+    data["tuning"]["pivot_deg_s"] = 180.0
+    assert RobotConfig.from_json(data).tuning.inner_pct == 20
 
 
 def test_route_error() -> None:

@@ -42,7 +42,9 @@ async def running(
 
 
 def tuning_writes(w) -> list[str]:
-    return [c for c in w.fakes.hub.written if c.split(",")[0] in ("KP", "KD", "SPD", "PIV", "SRCH")]
+    return [
+        c for c in w.fakes.hub.written if c.split(",")[0] in ("KP", "KD", "SPD", "INNER", "SRCH")
+    ]
 
 
 # -- panel -------------------------------------------------------------------
@@ -70,8 +72,8 @@ def test_set_values_is_silent(qapp) -> None:
         "kp": -3.0,
         "kd": -6.0,
         "base_speed_mm_s": 120,
-        "pivot_deg_s": 180,
-        "search_deg_s": 150,
+        "inner_pct": 20,
+        "search_deg_s": 60,
         "teleop_turn_deg_s": 180,
         "drift_speed_mm_s": 150,
         "drift_turn_deg_s": 90,
@@ -90,7 +92,7 @@ def test_modes_enable_and_hint(qapp) -> None:
 
     panel.set_mode("config")
     groups = {
-        "line": {"KP", "KD", "SPD", "PIV", "SRCH", "THR", "FIN"},
+        "line": {"KP", "KD", "SPD", "INNER", "SRCH", "THR", "FIN"},
         "teleop": {"SPD", "TURN"},
         "drift": {"DSPD", "DTRN"},
     }
@@ -177,7 +179,7 @@ async def test_readout_shows_the_speed_the_hub_acknowledged(window) -> None:
     await running(window)
     window._tick_ui()
     assert window.readouts["speed"].text() == "50"
-    assert window.readouts["turn"].text() == "180 / 150"
+    assert window.readouts["turn"].text() == "20 / 60"
     window.tuning.rows["SPD"].set_value(100)
     await window.tuner.flush()
     window._tick_ui()
@@ -186,21 +188,21 @@ async def test_readout_shows_the_speed_the_hub_acknowledged(window) -> None:
     await asyncio.sleep(0.01)
     window._tick_ui()
     assert window.readouts["speed"].text() == "100"
-    assert window.readouts["turn"].text() == "180 / 150"  # SPD no longer drives the turns
+    assert window.readouts["turn"].text() == "20 / 60"
 
 
 async def test_pivot_and_search_are_sent_live_and_acknowledged(window) -> None:
     await running(window)
     assert window.tuning.group == "line"
-    window.tuning.rows["PIV"].set_value(240)
+    window.tuning.rows["INNER"].set_value(35)
     window.tuning.rows["SRCH"].set_value(100)
     await window.tuner.flush()
-    assert sorted(tuning_writes(window)) == ["PIV,240\r\n", "SRCH,100\r\n"]
-    window.fakes.hub.emit(b"E,ACK,900,0.0,0.0,PIV:240.0\nE,ACK,901,0.0,0.0,SRCH:100.0\n")
+    assert sorted(tuning_writes(window)) == ["INNER,35\r\n", "SRCH,100\r\n"]
+    window.fakes.hub.emit(b"E,ACK,900,0.0,0.0,INNER:35.0\nE,ACK,901,0.0,0.0,SRCH:100.0\n")
     await asyncio.sleep(0.01)
     window._tick_ui()
-    assert window.tuning.rows["PIV"].ack.text() == "hub 240"
-    assert window.readouts["turn"].text() == "240 / 100"
+    assert window.tuning.rows["INNER"].ack.text() == "hub 35"
+    assert window.readouts["turn"].text() == "35 / 100"
 
 
 async def test_teleop_only_knobs_are_never_sent_to_the_hub(window) -> None:

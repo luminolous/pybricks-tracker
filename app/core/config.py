@@ -158,13 +158,13 @@ IDLE_PROFILE = DriveProfile("—", "turn °/s", "—")
 
 def drive_profile(mode: str | None, knobs: Mapping[str, float]) -> DriveProfile:
     """What the running program drives at, from tuning knob values by key
-    (SPD, PIV, SRCH, TURN, DSPD, DTRN), as the hub has them where it acknowledges."""
+    (SPD, INNER, SRCH, TURN, DSPD, DTRN), as the hub has them where it acknowledges."""
 
     def fmt(key: str) -> str:
         return f"{knobs[key]:.0f}"
 
     if mode == "line_follower":
-        return DriveProfile(fmt("SPD"), "pivot / search °/s", f"{fmt('PIV')} / {fmt('SRCH')}")
+        return DriveProfile(fmt("SPD"), "inner % / search °/s", f"{fmt('INNER')} / {fmt('SRCH')}")
     if mode == "teleop":
         return DriveProfile(fmt("SPD"), "turn °/s", fmt("TURN"))
     if mode == "drift_test":
@@ -181,10 +181,12 @@ class TuningParams:
     kd: float = -5.0
     base_speed_mm_s: float = 50.0
     obstacle_threshold_mm: int = 50
-    # Turn in place on black and sweep for a lost line (PIVOT_RATE 180 and
-    # SEARCH_RATE 150 in the original). Live, like SPD.
-    pivot_deg_s: float = 180.0
-    search_deg_s: float = 150.0
+    # Line follower turns, live like SPD. On black: arc with the inner wheel at
+    # inner_pct of the outer (SPD), both forward; the original pivoted in place
+    # at 180 deg/s. Lost line: swing on the stopped inner wheel at
+    # search_deg_s (the original spun in place at 150 after backing up).
+    inner_pct: float = 20.0
+    search_deg_s: float = 60.0
     # Teleop drives forward at SPD and turns at this rate.
     teleop_turn_deg_s: float = 180.0
     # Drift test: fixed for the whole test so runs stay comparable.

@@ -124,7 +124,7 @@ def test_malformed_t_and_e_return_none(line: str) -> None:
 def test_encode_commands() -> None:
     assert encode_command("KP", -1.8) == "KP,-1.8"
     assert encode_command("SPD", 70.0) == "SPD,70"
-    assert encode_command("PIV", 180.0) == "PIV,180"
+    assert encode_command("INNER", 20.0) == "INNER,20"
     assert encode_command("SRCH", 150.0) == "SRCH,150"
     assert encode_command("THR", 50) == "THR,50"
     assert encode_command("MODE", "STOP") == "MODE,STOP"
@@ -162,8 +162,9 @@ def test_malformed_detail_returns_none(line: str) -> None:
 
 def test_pivot_and_search_acks() -> None:
     # real sample: the hub prints the float it parsed
-    record = decode_line("E,ACK,900,0.0,0.0,PIV:240.0")
-    assert parse_ack(record.detail) == ("PIV", 240.0)
+    record = decode_line("E,ACK,900,0.0,0.0,INNER:35.0")
+    assert parse_ack(record.detail) == ("INNER", 35.0)
+    assert parse_ack("PIV:180.0") is None  # retired with the arc turns
     assert parse_ack("SRCH:150.0") == ("SRCH", 150.0)
     assert parse_ack("SRCH:fast") is None  # malformed value
     assert parse_ack("TURN:90.0") is None  # app-side knob, never acknowledged

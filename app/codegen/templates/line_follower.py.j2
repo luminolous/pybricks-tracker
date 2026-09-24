@@ -1,11 +1,18 @@
 {% extends "_base.py.j2" %}
 {% block control %}
 # Line follower, ported from the original hand-written script: PD on
-# reflection around the calibrated edge, pivot in place on black, and when
-# white lasts too long, back up and sweep for the line by angle, first
-# toward the correction, then twice as far the other way. Calibration and the
-# live check moved to the app. Blocking moves became steps of the base loop,
-# so commands, the watchdog and telemetry keep running during a search.
+# reflection around the calibrated edge, a sharp turn on black, and when the
+# line is gone, sweep for it by angle, first toward the correction, then twice
+# as far the other way. Calibration and the live check moved to the app.
+# Blocking moves became steps of the base loop, so commands, the watchdog and
+# telemetry keep running during a search.
+#
+# No wheel ever runs backwards here (user request, 2026-09-24): pivoting in
+# place and backing up looked like the robot reversing whenever it flipped
+# between black and white. Every turn keeps the outer wheel at SPD and only
+# slows the inner one. On black the inner wheel runs at INNER_PCT of SPD: the
+# sharpest turn. PD steering on the edge is capped at that same turn, so black
+# always turns hardest. The search swings on the stopped inner wheel.
 #
 # Route (protocol.md): planned turns in order, e.g. "RLLR". Before each turn
 # the robot tracks the line edge on that side, so it takes that branch at the
@@ -20,7 +27,9 @@ WHITE = {{ calibration.white }}
 EDGE = {{ calibration.edge }}
 BLACK_BELOW = (BLACK + EDGE) // 2  # original: nilai < (hitam + TEPI) / 2
 WHITE_ABOVE = (WHITE + EDGE) // 2  # original: nilai > (putih + TEPI) / 2
-# PIVOT_RATE and SEARCH_RATE live in the base template: PIV and SRCH change them.
+# INNER_PCT and SEARCH_RATE live in the base template: INNER and SRCH change them.
+AXLE_MM = {{ geometry.axle_track_mm }}
+RAD_TO_DEG = 180 / math.pi
 # White this long AND this far forward means the line is gone (90 degree
 # corner, line end). Time alone was not enough: after a pivot the robot needs
 # ~0.2-0.3 s to stop turning and swing back, so it sat on white for 150 ms
@@ -29,7 +38,6 @@ WHITE_ABOVE = (WHITE + EDGE) // 2  # original: nilai > (putih + TEPI) / 2
 LOST_MS = 150
 LOST_MM = 30
 SEARCH_DEG = 120  # first sweep; the return sweep covers twice this
-BACKUP_MM = 20  # back up before sweeping
 
 ROUTE = "{{ tuning.route }}"  # planned turns in order, L or R; empty: plain following
 TURN_DONE_DEG = 60  # heading change that counts as a planned turn taken
@@ -39,7 +47,7 @@ WALL_TURN_DEG = 90  # fallback turn on the spot when a wall blocks a pending tur
 _last_error = 0
 _white_timer = StopWatch()
 _white_from = 0  # robot.distance() when the sensor last left the line
-_search = 0  # 0 following, 1 backing up, 2 first sweep, 3 return sweep
+_search = 0  # 0 following, 1 first sweep, 2 return sweep
 _search_dir = 1
 _sweep_start = 0
 _obstacle = False
@@ -71,6 +79,23 @@ def edge_flip():
         return 1
     tuned = 1 if KP < 0 else -1
     return tuned * turn_sign(ROUTE[min(_side_step, len(ROUTE) - 1)])
+
+
+def arc_turn(inner):
+    # Turn rate (deg/s) with the outer wheel at BASE_SPEED and the inner one at
+    # inner * BASE_SPEED, both forward. arc_turn(0): the inner wheel stops.
+    return abs(BASE_SPEED) * (1 - inner) / AXLE_MM * RAD_TO_DEG
+
+
+def arc_speed(turn_deg_s):
+    # Centre speed when the outer wheel keeps BASE_SPEED and only the inner
+    # wheel slows down to make turn_deg_s.
+    return BASE_SPEED - abs(turn_deg_s) / RAD_TO_DEG * AXLE_MM / 2
+
+
+def swing_speed(turn_deg_s):
+    # Centre speed that turns at turn_deg_s on a stopped inner wheel.
+    return abs(turn_deg_s) / RAD_TO_DEG * AXLE_MM / 2
 
 
 def correction_dir(error):
@@ -120,24 +145,18 @@ def finish():
 
 
 def start_search(error):
-    global STATE, STEER, _search, _search_dir
-    robot.stop()
+    global STATE, STEER, _search, _search_dir, _sweep_start
     _search_dir = correction_dir(error)
     _search = 1
+    _sweep_start = robot.angle()
     STATE = "SEARCH"
     STEER = 0
     light(Color.BLUE)
     emit_e("LOST")
-    robot.straight(-BACKUP_MM, wait=False)
 
 
 def search_step(refl):
     global STATE, STEER, STOPPED, _search, _search_dir, _sweep_start, _last_error
-    if _search == 1:
-        if robot.done():
-            _search = 2
-            _sweep_start = robot.angle()
-        return
     if refl < EDGE:
         robot.stop()
         _search = 0
@@ -146,11 +165,11 @@ def search_step(refl):
         STATE = "FOLLOW"
         emit_e("FOUND")
         return
-    limit = SEARCH_DEG if _search == 2 else 2 * SEARCH_DEG
+    limit = SEARCH_DEG if _search == 1 else 2 * SEARCH_DEG
     if abs(robot.angle() - _sweep_start) >= limit:
         robot.stop()
-        if _search == 2:
-            _search = 3
+        if _search == 1:
+            _search = 2
             _search_dir = -_search_dir
             _sweep_start = robot.angle()
         else:
@@ -161,7 +180,7 @@ def search_step(refl):
             STOPPED = True
             return
     STEER = _search_dir * SEARCH_RATE
-    robot.drive(0, STEER)
+    robot.drive(swing_speed(SEARCH_RATE), STEER)  # swing forward, never back
 
 
 def control_step(n, refl):
@@ -214,14 +233,16 @@ def control_step(n, refl):
         return
 
     if refl < BLACK_BELOW:
-        STEER = correction_dir(error) * PIVOT_RATE
+        # arc, not a pivot in place: the sharpest turn, inner wheel at INNER_PCT
+        STEER = correction_dir(error) * arc_turn(INNER_PCT / 100)
         STATE = "PIVOT"
         light(Color.RED)
-        robot.drive(0, STEER)
     else:
         STEER = edge_flip() * (KP * error + KD * (error - _last_error))
+        limit = arc_turn(INNER_PCT / 100)  # never sharper than the turn on black
+        STEER = max(-limit, min(limit, STEER))
         STATE = "FOLLOW"
         light(Color.GREEN if refl > WHITE_ABOVE else Color.YELLOW)
-        robot.drive(BASE_SPEED, STEER)
+    robot.drive(arc_speed(STEER), STEER)  # outer wheel at SPD, inner slower, both forward
     _last_error = error
 {% endblock %}

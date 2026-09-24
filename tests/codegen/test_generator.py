@@ -271,12 +271,11 @@ def test_original_constants(source: str) -> None:
         "KD = -5.0",
         "BASE_SPEED = 50.0",
         "OBSTACLE_MM = 50",
-        "PIVOT_RATE = 180.0",
-        "SEARCH_RATE = 150.0",
+        "INNER_PCT = 20.0",
+        "SEARCH_RATE = 60.0",
         "LOST_MS = 150",
         "LOST_MM = 30",
         "SEARCH_DEG = 120",
-        "BACKUP_MM = 20",
         "BLACK_BELOW = (BLACK + EDGE) // 2",
         "WHITE_ABOVE = (WHITE + EDGE) // 2",
     ):
@@ -284,45 +283,63 @@ def test_original_constants(source: str) -> None:
 
 
 def test_pivot_and_search_rates_are_live(source: str) -> None:
-    """PIV and SRCH change the rates mid-run; each applied value is acknowledged."""
+    """INNER and SRCH change the turns mid-run; each applied value is acknowledged."""
     commands = function(source, "check_commands")
-    assert "PIVOT_RATE = max(0.0, min(DRV_MAX_TURN, float(value)))" in commands
-    assert 'emit_e("ACK", "PIV:{}".format(PIVOT_RATE))' in commands
+    assert "INNER_PCT = max(0.0, min(100.0, float(value)))" in commands
+    assert 'emit_e("ACK", "INNER:{}".format(INNER_PCT))' in commands
     assert "SEARCH_RATE = max(0.0, min(DRV_MAX_TURN, float(value)))" in commands
     assert 'emit_e("ACK", "SRCH:{}".format(SEARCH_RATE))' in commands
-    assert "global KP, KD, BASE_SPEED, OBSTACLE_MM, PIVOT_RATE, SEARCH_RATE" in commands
+    assert "global KP, KD, BASE_SPEED, OBSTACLE_MM, INNER_PCT, SEARCH_RATE" in commands
     assert "STEER = _search_dir * SEARCH_RATE" in function(source, "search_step")
 
 
 def test_turn_and_drift_speeds_come_from_the_config() -> None:
-    tuning = TuningParams(
-        pivot_deg_s=200, search_deg_s=120, drift_speed_mm_s=100, drift_turn_deg_s=45
-    )
+    tuning = TuningParams(inner_pct=35, search_deg_s=120, drift_speed_mm_s=100, drift_turn_deg_s=45)
     config = replace(RobotConfig(), tuning=tuning)
     lf = render(config, "line_follower")
-    assert re.search(r"^PIVOT_RATE = 200\b", lf, re.MULTILINE)
+    assert re.search(r"^INNER_PCT = 35\b", lf, re.MULTILINE)
     assert re.search(r"^SEARCH_RATE = 120\b", lf, re.MULTILINE)
     drift = render(config, "drift_test", drift="straight")
     assert re.search(r"^STRAIGHT_SPEED = 100\b", drift, re.MULTILINE)
     assert re.search(r"^TURN_RATE = 45\b", drift, re.MULTILINE)
 
 
-def test_search_backs_up_then_sweeps_by_angle(source: str) -> None:
+def test_search_sweeps_forward_by_angle_without_backing_up(source: str) -> None:
     start = function(source, "start_search")
-    assert "robot.straight(-BACKUP_MM, wait=False)" in start  # non-blocking back-up
+    assert "robot.straight(" not in source  # nothing ever backs up
     assert "_search_dir = correction_dir(error)" in start
+    assert "_sweep_start = robot.angle()" in start
     step = function(source, "search_step")
-    assert "if robot.done():" in step
     assert "abs(robot.angle() - _sweep_start) >= limit" in step
-    assert "limit = SEARCH_DEG if _search == 2 else 2 * SEARCH_DEG" in step
+    assert "limit = SEARCH_DEG if _search == 1 else 2 * SEARCH_DEG" in step
     assert "if refl < EDGE:" in step  # found, as the original: warna.reflection() < TEPI
     assert 'emit_e("GIVEUP")' in step
+    # the sweep swings on the stopped inner wheel: forward, never back
+    assert "robot.drive(swing_speed(SEARCH_RATE), STEER)" in step
+    assert "return abs(turn_deg_s) / RAD_TO_DEG * AXLE_MM / 2" in function(source, "swing_speed")
+
+
+def test_turns_never_run_a_wheel_backwards(source: str) -> None:
+    control = function(source, "control_step")
+    # on black: the sharpest arc, inner wheel at INNER_PCT of the outer one
+    assert "STEER = correction_dir(error) * arc_turn(INNER_PCT / 100)" in control
+    # PD on the edge never turns sharper than that
+    assert "limit = arc_turn(INNER_PCT / 100)" in control
+    assert "STEER = max(-limit, min(limit, STEER))" in control
+    # both states drive the same way: outer wheel at SPD, only the inner slows
+    assert "robot.drive(arc_speed(STEER), STEER)" in control
+    assert "robot.drive(0," not in source  # no pivot in place anywhere
+    arc = function(source, "arc_turn")
+    assert "return abs(BASE_SPEED) * (1 - inner) / AXLE_MM * RAD_TO_DEG" in arc
+    speed = function(source, "arc_speed")
+    assert "return BASE_SPEED - abs(turn_deg_s) / RAD_TO_DEG * AXLE_MM / 2" in speed
+    assert "AXLE_MM = 112.0" in source
 
 
 def test_pivot_and_white_timer_follow_the_original(source: str) -> None:
     control = function(source, "control_step")
     assert "if refl < BLACK_BELOW:" in control
-    assert "STEER = correction_dir(error) * PIVOT_RATE" in control
+    assert "STEER = correction_dir(error) * arc_turn(INNER_PCT / 100)" in control
     assert "if refl <= WHITE_ABOVE:\n        on_line()" in control
     # lost needs time AND forward travel: swinging back after a pivot is not lost
     assert (

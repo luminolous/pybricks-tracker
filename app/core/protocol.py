@@ -131,7 +131,7 @@ class Status:
 EVENT_KINDS = frozenset(
     {"LOST", "FOUND", "GIVEUP", "OBS", "STALL", "BUMP", "LAP", "WDOG", "TURN", "FINISH", "ACK"}
 )
-TUNING_KEYS = ("KP", "KD", "SPD", "PIV", "SRCH", "THR", "FIN")
+TUNING_KEYS = ("KP", "KD", "SPD", "INNER", "SRCH", "THR", "FIN")
 
 
 def parse_ack(detail: str | None) -> tuple[str, float] | None:
@@ -236,7 +236,7 @@ def _decode_event(fields: list[str]) -> Event | None:
 
 
 COMMAND_KEYS = frozenset(
-    {"KP", "KD", "SPD", "PIV", "SRCH", "THR", "FIN", "MODE", "HB", "ORG", "DRV"}
+    {"KP", "KD", "SPD", "INNER", "SRCH", "THR", "FIN", "MODE", "HB", "ORG", "DRV"}
 )
 MODE_VALUES = frozenset({"STOP", "PAUSE", "RESUME"})
 

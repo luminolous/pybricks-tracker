@@ -13,7 +13,7 @@ Known deviations in the Qt build:
   fit at real font metrics; at 276 px the direction combo covered the role
   combo's arrow. The device name now shrinks first.
 - The readout strip has two more cells after state: `speed mm/s` and the turn
-  rate (`pivot / search` for the line follower, `turn` for teleop and the
+  rate (`inner % / search` for the line follower, `turn` for teleop and the
   drift test). They show what the running program drives at, using the
   values the hub acknowledged.
 - The tuning panel shows one program's knobs at a time, with `Line / Teleop /
