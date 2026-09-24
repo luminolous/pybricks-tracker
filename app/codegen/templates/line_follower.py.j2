@@ -21,7 +21,13 @@ EDGE = {{ calibration.edge }}
 BLACK_BELOW = (BLACK + EDGE) // 2  # original: nilai < (hitam + TEPI) / 2
 WHITE_ABOVE = (WHITE + EDGE) // 2  # original: nilai > (putih + TEPI) / 2
 # PIVOT_RATE and SEARCH_RATE live in the base template: PIV and SRCH change them.
-LOST_MS = 150  # white this long means the line is gone (90 degree corner)
+# White this long AND this far forward means the line is gone (90 degree
+# corner, line end). Time alone was not enough: after a pivot the robot needs
+# ~0.2-0.3 s to stop turning and swing back, so it sat on white for 150 ms
+# right next to the line and searched every time (recorded 2026-09-24).
+# Swinging back barely moves it forward; running off the line does.
+LOST_MS = 150
+LOST_MM = 30
 SEARCH_DEG = 120  # first sweep; the return sweep covers twice this
 BACKUP_MM = 20  # back up before sweeping
 
@@ -32,6 +38,7 @@ WALL_TURN_DEG = 90  # fallback turn on the spot when a wall blocks a pending tur
 
 _last_error = 0
 _white_timer = StopWatch()
+_white_from = 0  # robot.distance() when the sensor last left the line
 _search = 0  # 0 following, 1 backing up, 2 first sweep, 3 return sweep
 _search_dir = 1
 _sweep_start = 0
@@ -71,10 +78,17 @@ def correction_dir(error):
     return edge_flip() if KP * error > 0 else -edge_flip()
 
 
+def on_line():
+    # The sensor sees the line (or its edge): restart the lost clocks.
+    global _white_from
+    _white_timer.reset()
+    _white_from = robot.distance()
+
+
 def setup():
     global STATE, _step_heading
     STATE = "FOLLOW"
-    _white_timer.reset()
+    on_line()
     _step_heading = _heading_deg
 
 
@@ -128,7 +142,7 @@ def search_step(refl):
         robot.stop()
         _search = 0
         _last_error = 0
-        _white_timer.reset()
+        on_line()
         STATE = "FOLLOW"
         emit_e("FOUND")
         return
@@ -156,7 +170,7 @@ def control_step(n, refl):
         if not robot.done():
             return
         _wall_turn = False  # facing the planned branch; follow or search from here
-        _white_timer.reset()
+        on_line()
         STATE = "FOLLOW"
     if not _search:
         track_route()
@@ -191,8 +205,8 @@ def control_step(n, refl):
 
     error = refl - EDGE
     if refl <= WHITE_ABOVE:
-        _white_timer.reset()
-    elif _white_timer.time() > LOST_MS:
+        on_line()
+    elif _white_timer.time() > LOST_MS and robot.distance() - _white_from >= LOST_MM:
         if _finish_from is not None and robot.distance() - _finish_from >= FINISH_MM:
             finish()
             return

@@ -184,3 +184,20 @@ calibration black 9 / white 74 (edge 41), no route. The user saw the robot
 
 To confirm on the robot: the heading should stop turning within a few degrees
 once PIVOT ends. If it still overshoots, lower PIV (live) before anything else.
+
+Follow-up, same day: with `use_gyro(False)` (run `20260924-045427`, robot
+started on the black line, route empty) the loop was unchanged: PIVOT, then
+7-10 degrees of overshoot, LOST after 150 ms, back-up, sweep. So the gyro was
+not the cause. The real one:
+
+- The tape edge is sharp: leaving black, the sensor goes from ~8 straight to
+  90+ within one 50 ms sample, so there is almost no edge band for the PD.
+- After a 180 deg/s pivot the robot needs ~0.2-0.3 s to stop turning and swing
+  back. The 150 ms lost timer is shorter, so every pivot exit counted as a lost
+  line, although the line was right next to the sensor. The robot moved only
+  ~5 mm forward in that time.
+
+Fix: lost now needs 150 ms on white **and** 30 mm of forward travel on white
+(`LOST_MM`). Swinging back after a pivot barely moves the robot forward; a
+real line end or 90 degree corner does. `use_gyro(False)` stays, as in the
+original script.

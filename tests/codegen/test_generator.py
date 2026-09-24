@@ -274,6 +274,7 @@ def test_original_constants(source: str) -> None:
         "PIVOT_RATE = 180.0",
         "SEARCH_RATE = 150.0",
         "LOST_MS = 150",
+        "LOST_MM = 30",
         "SEARCH_DEG = 120",
         "BACKUP_MM = 20",
         "BLACK_BELOW = (BLACK + EDGE) // 2",
@@ -322,8 +323,14 @@ def test_pivot_and_white_timer_follow_the_original(source: str) -> None:
     control = function(source, "control_step")
     assert "if refl < BLACK_BELOW:" in control
     assert "STEER = correction_dir(error) * PIVOT_RATE" in control
-    assert "if refl <= WHITE_ABOVE:" in control and "_white_timer.reset()" in control
-    assert "elif _white_timer.time() > LOST_MS:" in control
+    assert "if refl <= WHITE_ABOVE:\n        on_line()" in control
+    # lost needs time AND forward travel: swinging back after a pivot is not lost
+    assert (
+        "elif _white_timer.time() > LOST_MS and robot.distance() - _white_from >= LOST_MM:"
+        in control
+    )
+    assert "_white_from = robot.distance()" in function(source, "on_line")
+    assert "on_line()" in function(source, "search_step")  # found: clocks restart
     assert "correction_dir" in function(source, "correction_dir")
     assert "return edge_flip() if KP * error > 0 else -edge_flip()" in function(
         source, "correction_dir"
