@@ -119,6 +119,19 @@ class RobotGeometry:
     sensor_offset_mm: float = 40.0  # colour sensor ahead of the wheel axis
 
 
+ROUTE_TURNS = frozenset("LR")
+MAX_ROUTE_STEPS = 10
+
+
+def route_error(route: str) -> str | None:
+    """Why a route string is invalid, or None."""
+    if set(route) - ROUTE_TURNS:
+        return "Route turns must be L or R."
+    if len(route) > MAX_ROUTE_STEPS:
+        return f"Route has more than {MAX_ROUTE_STEPS} turns."
+    return None
+
+
 # Hub clamps, rendered into every program.
 MAX_TURN_DEG_S = 360
 MAX_SPEED_MM_S = 300
@@ -170,6 +183,11 @@ class TuningParams:
     # Drift test: fixed for the whole test so runs stay comparable.
     drift_speed_mm_s: float = 150.0
     drift_turn_deg_s: float = 90.0
+    # Line follower route (protocol.md): planned turns in order, e.g. "RLLR".
+    # Empty: plain line following. finish_mm: after the last turn, the first
+    # line end at least this far on is the finish.
+    route: str = ""
+    finish_mm: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -269,6 +287,7 @@ def _floats(section: Mapping[str, Any], kind: type) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for name, f in kind.__dataclass_fields__.items():
         if name in section:
-            caster = int if f.type in ("int", int) else float
+            # field types are strings under `from __future__ import annotations`
+            caster = {"int": int, "str": str}.get(str(f.type), float)
             out[name] = caster(section[name])
     return out

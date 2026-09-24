@@ -110,6 +110,14 @@ QPushButton[role="small"]:checked {{
 QPushButton[role="small"]:checked:disabled {{
     color: {MUTED}; border-color: {LINE_STRONG}; background: {FIELD};
 }}
+QPushButton[role="chip"] {{
+    padding: 2px 0; min-width: 22px; max-width: 26px; text-align: center;
+    font-family: "{fonts.mono}"; border-color: {LINE_STRONG};
+}}
+QPushButton[role="chip"][step="done"] {{
+    color: {ACCENT}; border-color: rgba(63, 208, 230, 110); background: {ACCENT_DIM};
+}}
+QPushButton[role="chip"][step="next"] {{ color: {TEXT}; border-color: {ACCENT}; }}
 QPushButton[role="tool"] {{
     border: 1px solid transparent; color: {MUTED}; padding: 8px 0; text-align: center;
     font-size: 11px;

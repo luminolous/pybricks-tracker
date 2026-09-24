@@ -20,6 +20,8 @@ KIND_COLORS = {
     "BUMP": theme.DANGER,
     "WDOG": theme.DANGER,
     "LAP": theme.ACCENT,
+    "TURN": theme.ACCENT,
+    "FINISH": theme.OK,
 }
 
 

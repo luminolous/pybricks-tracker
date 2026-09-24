@@ -90,7 +90,9 @@ class TelemetryWatch:
 
 MAX_TRAIL_POINTS = 36_000  # 30 minutes of T at 20 Hz
 MAX_EVENTS = 2_000
-LISTED_EVENT_KINDS = frozenset({"LOST", "FOUND", "GIVEUP", "OBS", "STALL", "BUMP", "LAP", "WDOG"})
+LISTED_EVENT_KINDS = frozenset(
+    {"LOST", "FOUND", "GIVEUP", "OBS", "STALL", "BUMP", "LAP", "WDOG", "TURN", "FINISH"}
+)
 # One counter for every RobotState: the map and plots skip redraws by
 # version, and replay swaps state objects, so versions must never repeat.
 _versions = itertools.count(1)
@@ -105,6 +107,15 @@ class EventRecord:
     heading_deg: float  # robot heading when it happened; places OBS points
     detail: str | None = None
 
+    def route_step(self) -> int | None:
+        """Turns taken so far, from a TURN detail like "2/4 L"; None otherwise."""
+        if self.kind != "TURN" or not self.detail:
+            return None
+        try:
+            return int(self.detail.split("/", 1)[0])
+        except ValueError:
+            return None
+
     def describe(self) -> str:
         d = self.detail
         return {
@@ -116,6 +127,8 @@ class EventRecord:
             "BUMP": f"Bump, {d} mm/s²",
             "LAP": f"Lap {d}",
             "WDOG": f"Watchdog stop after {d} ms without commands",
+            "TURN": f"Route turn {d}",
+            "FINISH": f"Finish, {d} mm after the last turn",
         }.get(self.kind, self.kind)
 
 

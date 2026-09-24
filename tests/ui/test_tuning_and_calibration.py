@@ -75,6 +75,9 @@ def test_set_values_is_silent(qapp) -> None:
         "teleop_turn_deg_s": 180,
         "drift_speed_mm_s": 150,
         "drift_turn_deg_s": 90,
+        "obstacle_threshold_mm": 50,
+        "finish_mm": 0,
+        "route": "",
     }
     assert panel.rows["SPD"].slider.value() == 24
 
@@ -87,7 +90,7 @@ def test_modes_enable_and_hint(qapp) -> None:
 
     panel.set_mode("config")
     groups = {
-        "line": {"KP", "KD", "SPD", "PIV", "SRCH"},
+        "line": {"KP", "KD", "SPD", "PIV", "SRCH", "THR", "FIN"},
         "teleop": {"SPD", "TURN"},
         "drift": {"DSPD", "DTRN"},
     }
@@ -96,6 +99,40 @@ def test_modes_enable_and_hint(qapp) -> None:
         assert panel.group == group
         shown = {k for k, row in panel.rows.items() if not row.slider.isHidden()}
         assert shown == keys
+
+
+def test_route_editor(qapp) -> None:
+    panel = TuningPanel()
+    seen = []
+    panel.route_changed.connect(seen.append)
+    editor = panel.route
+    for turn in "RLL":
+        editor.add_buttons[turn].click()
+    editor.add_buttons["R"].click()
+    assert editor.route() == "RLLR" and seen[-1] == "RLLR"
+    editor.chips[1].click()  # flip
+    assert editor.route() == "RRLR"
+    editor.add_buttons[""].click()  # remove last
+    assert panel.values()["route"] == "RRL"
+    for _ in range(20):
+        editor.add_buttons["L"].click()
+    assert len(editor.route()) == 10  # MAX_ROUTE_STEPS
+    assert not editor.add_buttons["L"].isEnabled()
+
+
+def test_route_is_line_only_and_locked_while_running(qapp) -> None:
+    panel = TuningPanel()
+    panel.set_values(TuningParams(route="RL"))
+    assert panel.route.route() == "RL"
+    panel.set_group("teleop")
+    assert panel.route.isHidden()
+    panel.set_group("line")
+    panel.set_mode("live")
+    assert not panel.route.chips[0].isEnabled()
+    assert not panel.route.add_buttons["L"].isEnabled()
+    panel.route.set_progress(1)
+    assert panel.route.chips[0].property("step") == "done"
+    assert panel.route.chips[1].property("step") == "next"
 
 
 def test_group_buttons_lock_while_a_program_runs(qapp) -> None:
@@ -290,3 +327,28 @@ async def test_calibration_through_main_window(window) -> None:
     assert d.live.text() == "Live reflection: 12"
     window.apply_calibration(SensorCalibration(12, 88))
     assert window.current_config().calibration.edge == 50
+
+
+async def test_route_runs_and_shows_progress(window) -> None:
+    for turn in "RLLR":
+        window.tuning.route.add_buttons[turn].click()
+    await running(window)
+    assert 'ROUTE = "RLLR"' in Path(window.fakes.hub.ran[-1]).read_text(encoding="utf-8")
+    window._tick_ui()
+    assert window.tuning.route.chips[0].property("step") == "next"
+    window.fakes.hub.emit(b"E,TURN,5000,300.0,0.0,1/4 R\nE,TURN,9000,300.0,-400.0,2/4 L\n")
+    await asyncio.sleep(0.01)
+    window._tick_ui()
+    assert [c.property("step") for c in window.tuning.route.chips] == ["done", "done", "next", ""]
+    assert window.event_list.list.count() >= 2
+
+
+async def test_fin_is_sent_live(window) -> None:
+    await running(window)
+    window.tuning.rows["FIN"].set_value(600)
+    window.tuning.rows["THR"].set_value(80)
+    await window.tuner.flush()
+    assert sorted(c for c in window.fakes.hub.written if c.startswith(("FIN", "THR"))) == [
+        "FIN,600\r\n",
+        "THR,80\r\n",
+    ]

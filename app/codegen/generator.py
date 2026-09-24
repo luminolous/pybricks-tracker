@@ -19,6 +19,7 @@ from app.core.config import (
     PortAssignment,
     RobotConfig,
     Role,
+    route_error,
 )
 from app.core.protocol import PROTO_VERSION
 
@@ -84,6 +85,9 @@ def render(config: RobotConfig, mode: str, drift: str | None = None) -> str:
     if left is None or right is None:
         raise GeneratorError("Assign a left and a right wheel before running.")
     line = _device(config.port_for(Role.LINE_SENSOR))
+    error = route_error(config.tuning.route)
+    if error:
+        raise GeneratorError(error)
     if mode in NEEDS_LINE_SENSOR and line is None:
         raise GeneratorError(f"The {mode.replace('_', ' ')} program needs a line sensor.")
     for port, assignment in config.ports.items():

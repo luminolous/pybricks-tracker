@@ -17,7 +17,9 @@ Known deviations in the Qt build:
   drift test). They show what the running program drives at, using the
   values the hub acknowledged.
 - The tuning panel shows one program's knobs at a time, with `Line / Teleop /
-  Drift` buttons (small role, checked = accent) next to the caption.
+  Drift` buttons (small role, checked = accent) next to the caption. The line
+  group ends with a route row of small mono chips (`chip` role): taken = accent
+  fill, next = accent outline.
 - Device names are shortened in the port table (`Motor`, `Ultrasonic`); the
   full name is the tooltip.
 

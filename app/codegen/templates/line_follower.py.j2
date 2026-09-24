@@ -6,6 +6,12 @@
 # toward the correction, then twice as far the other way. Calibration and the
 # live check moved to the app. Blocking moves became steps of the base loop,
 # so commands, the watchdog and telemetry keep running during a search.
+#
+# Route (protocol.md): planned turns in order, e.g. "RLLR". Before each turn
+# the robot tracks the line edge on that side, so it takes that branch at the
+# next junction; the gyro counts a turn as taken. If a wall shows up while a
+# turn is pending, the robot turns the planned way on the spot. After the last
+# turn, a line end at least FINISH_MM later is the finish.
 
 from pybricks.parameters import Color
 
@@ -19,13 +25,24 @@ LOST_MS = 150  # white this long means the line is gone (90 degree corner)
 SEARCH_DEG = 120  # first sweep; the return sweep covers twice this
 BACKUP_MM = 20  # back up before sweeping
 
+ROUTE = "{{ tuning.route }}"  # planned turns in order, L or R; empty: plain following
+TURN_DONE_DEG = 60  # heading change that counts as a planned turn taken
+SETTLE_DEG = 20  # switch to the next turn's edge once this close to the new heading
+WALL_TURN_DEG = 90  # fallback turn on the spot when a wall blocks a pending turn
+
 _last_error = 0
 _white_timer = StopWatch()
 _search = 0  # 0 following, 1 backing up, 2 first sweep, 3 return sweep
 _search_dir = 1
 _sweep_start = 0
 _obstacle = False
+_wall_turn = False
+_wall_armed = True  # off after a wall turn until the distance reads clear again
 _light = None
+_step = 0  # planned turns taken
+_side_step = 0  # the step whose turn side sets the tracked edge
+_step_heading = 0.0  # ideal heading while the current step is pending
+_finish_from = None  # robot.distance() when the last planned turn was taken
 
 
 def light(color):
@@ -36,15 +53,56 @@ def light(color):
         _light = color
 
 
+def turn_sign(c):
+    return 1 if c == "R" else -1
+
+
+def edge_flip():
+    # 1 keeps the edge the KP sign tracks, -1 tracks the other one. Negative
+    # KP tracks the right edge, and an edge follower takes that side's branch.
+    if not ROUTE:
+        return 1
+    tuned = 1 if KP < 0 else -1
+    return tuned * turn_sign(ROUTE[min(_side_step, len(ROUTE) - 1)])
+
+
 def correction_dir(error):
-    # Turn direction of the correction; follows the sign of KP.
-    return 1 if KP * error > 0 else -1
+    # Turn direction of the correction; follows the sign of KP and the edge.
+    return edge_flip() if KP * error > 0 else -edge_flip()
 
 
 def setup():
-    global STATE
+    global STATE, _step_heading
     STATE = "FOLLOW"
     _white_timer.reset()
+    _step_heading = _heading_deg
+
+
+def track_route():
+    global _step, _side_step, _step_heading, _finish_from
+    if _side_step < _step and abs(_heading_deg - _step_heading) < SETTLE_DEG:
+        _side_step = _step  # settled on the new line: track the next turn's edge
+    if _step >= len(ROUTE):
+        return
+    sign = turn_sign(ROUTE[_step])
+    # the app frame is CCW-positive: a right turn lowers the heading
+    if (_step_heading - _heading_deg) * sign >= TURN_DONE_DEG:
+        _step += 1
+        _step_heading -= sign * 90
+        emit_e("TURN", "{}/{} {}".format(_step, len(ROUTE), ROUTE[_step - 1]))
+        if _step == len(ROUTE):
+            _finish_from = robot.distance()
+
+
+def finish():
+    global STATE, STEER, STOPPED
+    robot.stop()
+    STEER = 0
+    STATE = "STOP"
+    emit_e("FINISH", int(robot.distance() - _finish_from))
+    light(Color.GREEN)
+    hub.speaker.beep(800, 300)
+    STOPPED = True
 
 
 def start_search(error):
@@ -93,9 +151,19 @@ def search_step(refl):
 
 
 def control_step(n, refl):
-    global STATE, STEER, _last_error, _obstacle
+    global STATE, STEER, _last_error, _obstacle, _search, _wall_turn, _wall_armed
+    if _wall_turn:
+        if not robot.done():
+            return
+        _wall_turn = False  # facing the planned branch; follow or search from here
+        _white_timer.reset()
+        STATE = "FOLLOW"
+    if not _search:
+        track_route()
 {% if distance %}
-    if _distance_mm < OBSTACLE_MM:
+    if _distance_mm >= OBSTACLE_MM:
+        _wall_armed = True
+    elif _wall_armed:
         if not _obstacle:
             _obstacle = True
             emit_e("OBS", _distance_mm)
@@ -103,6 +171,14 @@ def control_step(n, refl):
             hub.speaker.beep(1000, 100)
         robot.stop()
         STEER = 0
+        if _step < len(ROUTE):
+            # the branch was missed: turn the planned way on the spot
+            _search = 0
+            _wall_turn = True
+            _wall_armed = False  # the same wall may still be in view after the turn
+            STATE = "WALL"
+            robot.turn(turn_sign(ROUTE[_step]) * WALL_TURN_DEG, wait=False)
+            return
         STATE = "OBSTACLE"
         return
     if _obstacle:
@@ -117,6 +193,9 @@ def control_step(n, refl):
     if refl <= WHITE_ABOVE:
         _white_timer.reset()
     elif _white_timer.time() > LOST_MS:
+        if _finish_from is not None and robot.distance() - _finish_from >= FINISH_MM:
+            finish()
+            return
         start_search(error)
         return
 
@@ -126,7 +205,7 @@ def control_step(n, refl):
         light(Color.RED)
         robot.drive(0, STEER)
     else:
-        STEER = KP * error + KD * (error - _last_error)
+        STEER = edge_flip() * (KP * error + KD * (error - _last_error))
         STATE = "FOLLOW"
         light(Color.GREEN if refl > WHITE_ABOVE else Color.YELLOW)
         robot.drive(BASE_SPEED, STEER)

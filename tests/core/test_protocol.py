@@ -167,3 +167,13 @@ def test_pivot_and_search_acks() -> None:
     assert parse_ack("SRCH:150.0") == ("SRCH", 150.0)
     assert parse_ack("SRCH:fast") is None  # malformed value
     assert parse_ack("TURN:90.0") is None  # app-side knob, never acknowledged
+
+
+def test_route_events_and_fin() -> None:
+    turn = decode_line("E,TURN,15200,410.0,-620.5,2/4 L")
+    assert (turn.kind, turn.detail) == ("TURN", "2/4 L")
+    assert decode_line("E,FINISH,48000,1500.0,300.0,712").detail == "712"
+    assert encode_command("FIN", 600.0) == "FIN,600"
+    assert parse_ack("FIN:600.0") == ("FIN", 600.0)
+    assert parse_ack("FIN:") is None
+    assert decode_line("E,TURNED,1,0,0") is None  # unknown kind

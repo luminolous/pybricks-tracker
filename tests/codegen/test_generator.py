@@ -318,7 +318,9 @@ def test_pivot_and_white_timer_follow_the_original(source: str) -> None:
     assert "if refl <= WHITE_ABOVE:" in control and "_white_timer.reset()" in control
     assert "elif _white_timer.time() > LOST_MS:" in control
     assert "correction_dir" in function(source, "correction_dir")
-    assert "return 1 if KP * error > 0 else -1" in function(source, "correction_dir")
+    assert "return edge_flip() if KP * error > 0 else -edge_flip()" in function(
+        source, "correction_dir"
+    )
 
 
 def test_hub_light_shows_state(source: str) -> None:
@@ -379,3 +381,76 @@ def test_split_once_is_what_commands_use(source: str) -> None:
     helper = function(source, "split_once")
     assert 'i = text.find(",")' in helper
     assert "split_once(value)" in function(source, "check_commands")  # DRV speed,turn
+
+
+# -- route ------------------------------------------------------------------------
+
+ROUTED = replace(DEFAULT, tuning=replace(DEFAULT.tuning, route="RLLR", finish_mm=600.0))
+
+
+async def test_routed_program_compiles(tmp_path: Path) -> None:
+    path = generate(ROUTED, "line_follower", out_dir=tmp_path)
+    assert len(await compile_file(str(tmp_path), path.name, 6)) > 0
+
+
+def test_route_and_finish_are_rendered() -> None:
+    source = render(ROUTED, "line_follower")
+    assert re.search(r'^ROUTE = "RLLR"', source, re.MULTILINE)
+    assert re.search(r"^FINISH_MM = 600.0\b", source, re.MULTILINE)
+    assert re.search(r'^ROUTE = ""', render(DEFAULT, "line_follower"), re.MULTILINE)
+
+
+@pytest.mark.parametrize("route", ["RLX", "rl", "R L", "L" * 11])
+def test_bad_route_is_refused(route: str) -> None:
+    config = replace(DEFAULT, tuning=replace(DEFAULT.tuning, route=route))
+    with pytest.raises(GeneratorError):
+        render(config, "line_follower")
+
+
+def test_edge_follows_the_next_turn(source: str) -> None:
+    flip = function(source, "edge_flip")
+    assert "if not ROUTE:\n        return 1" in flip  # no route: the original behaviour
+    assert "tuned = 1 if KP < 0 else -1" in flip  # negative KP tracks the right edge
+    assert "return tuned * turn_sign(ROUTE[min(_side_step, len(ROUTE) - 1)])" in flip
+    control = function(source, "control_step")
+    assert "STEER = edge_flip() * (KP * error + KD * (error - _last_error))" in control
+
+
+def test_turns_are_counted_by_gyro_heading(source: str) -> None:
+    track = function(source, "track_route")
+    assert "if (_step_heading - _heading_deg) * sign >= TURN_DONE_DEG:" in track
+    assert "_step_heading -= sign * 90" in track
+    assert 'emit_e("TURN", "{}/{} {}".format(_step, len(ROUTE), ROUTE[_step - 1]))' in track
+    assert "_finish_from = robot.distance()" in track
+    # the edge switches only once the heading settled on the new line
+    assert "if _side_step < _step and abs(_heading_deg - _step_heading) < SETTLE_DEG:" in track
+    # search sweeps must not count as turns
+    assert "if not _search:\n        track_route()" in function(source, "control_step")
+
+
+def test_wall_turns_the_planned_way_without_blocking(source: str) -> None:
+    control = function(source, "control_step")
+    assert "if _step < len(ROUTE):" in control
+    assert "robot.turn(turn_sign(ROUTE[_step]) * WALL_TURN_DEG, wait=False)" in control
+    assert 'STATE = "WALL"' in control
+    # after a wall turn the same wall may still be in view: no second turn until clear
+    assert "_wall_armed = False" in control
+    assert "if _distance_mm >= OBSTACLE_MM:\n        _wall_armed = True" in control
+    assert "elif _wall_armed:" in control
+    assert "if not robot.done():\n            return" in control
+
+
+def test_finish_only_after_the_route_and_fin_distance(source: str) -> None:
+    control = function(source, "control_step")
+    assert (
+        "if _finish_from is not None and robot.distance() - _finish_from >= FINISH_MM:" in control
+    )
+    finish = function(source, "finish")
+    assert 'emit_e("FINISH", int(robot.distance() - _finish_from))' in finish
+    assert "STOPPED = True" in finish
+
+
+def test_fin_command_is_live_and_acknowledged(source: str) -> None:
+    commands = function(source, "check_commands")
+    assert "FINISH_MM = max(0.0, float(value))" in commands
+    assert 'emit_e("ACK", "FIN:{}".format(FINISH_MM))' in commands

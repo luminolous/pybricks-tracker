@@ -171,3 +171,14 @@ def test_run_totals_reset_with_origin() -> None:
     feed(state, "S,0,7800,150,1", "T,0,0.0,0.0,0.0,50,0,F", "T,50,3.0,4.0,0.0,40,0,F")
     state.reset_origin()
     assert state.path_mm == 0.0 and state.reflection_n == 0
+
+
+def test_route_step_and_describe() -> None:
+    from app.core.state import EventRecord
+
+    turn = EventRecord("TURN", 0, 0.0, 0.0, 0.0, "2/4 L")
+    assert turn.route_step() == 2
+    assert turn.describe() == "Route turn 2/4 L"
+    assert EventRecord("TURN", 0, 0.0, 0.0, 0.0, "x").route_step() is None
+    assert EventRecord("LOST", 0, 0.0, 0.0, 0.0).route_step() is None
+    assert "600 mm" in EventRecord("FINISH", 0, 0.0, 0.0, 0.0, "600").describe()

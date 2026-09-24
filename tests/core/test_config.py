@@ -80,7 +80,7 @@ def test_unplugged_sensor_after_rescan() -> None:
 def test_json_roundtrip(tmp_path) -> None:
     config = RobotConfig(
         geometry=RobotGeometry(wheel_diameter_mm=55.2, axle_track_mm=118.0),
-        tuning=TuningParams(kp=-2.0, obstacle_threshold_mm=80),
+        tuning=TuningParams(kp=-2.0, obstacle_threshold_mm=80, route="RLLR", finish_mm=600),
         calibration=SensorCalibration(black=10, white=90),
     )
     path = tmp_path / "presets" / "robot.json"
@@ -140,3 +140,11 @@ def test_old_presets_get_the_new_speed_defaults() -> None:
         del data["tuning"][key]
     tuning = RobotConfig.from_json(data).tuning
     assert (tuning.pivot_deg_s, tuning.search_deg_s, tuning.teleop_turn_deg_s) == (180, 150, 180)
+
+
+def test_route_error() -> None:
+    from app.core.config import route_error
+
+    assert route_error("") is None and route_error("RLLR") is None
+    assert "L or R" in route_error("RX")
+    assert "more than" in route_error("R" * 11)

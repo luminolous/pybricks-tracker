@@ -94,6 +94,7 @@ HANDSHAKE_TIMEOUT_S = 5.0  # upload done -> R line; longer means the program cra
 DRAIN_GRACE_S = 0.3  # let queued stdout lines land after a program ends
 READOUT_REFRESH_MS = 33  # ~30 fps; widgets never redraw per incoming line
 STATE_TONES = {
+    "WALL": "warn",
     "FOLLOW": "accent",
     "PIVOT": "accent",
     "SEARCH": "warn",
@@ -1070,6 +1071,8 @@ class MainWindow(QMainWindow):
                 self.note(f"Hub watchdog stopped the robot: no command for {record.detail} ms.")
             elif record.kind == "GIVEUP":
                 self.note("Line search failed in both directions. Robot stopped.")
+            elif record.kind == "FINISH":
+                self.note(f"Finish: line ended {record.detail} mm after the last turn.")
         elif self.scan.apply(record) and self.scan.done:
             self.port_panel.apply_scan(self.scan)
             self._scan_done.set()
@@ -1090,6 +1093,7 @@ class MainWindow(QMainWindow):
         view = self.view_state
         self._refresh_readouts()
         self._refresh_drive_profile()
+        self.tuning.route.set_progress(self.route_progress())
         calibration = self._base_config.calibration
         self.map.sensor_offset_mm = self.geometry_fields["sensor_offset_mm"].value()
         self.map.calibration = calibration
@@ -1195,6 +1199,13 @@ class MainWindow(QMainWindow):
                 if acked is not None:
                     knobs[key] = acked
         return drive_profile(self._current_mode, knobs)
+
+    def route_progress(self) -> int | None:
+        """Route turns taken in the shown line follower run, or None."""
+        if self._replay is None and self._current_mode != "line_follower":
+            return None
+        steps = [e.route_step() for e in self.view_state.events if e.kind == "TURN"]
+        return max((s for s in steps if s is not None), default=0)
 
     def _refresh_drive_profile(self) -> None:
         profile = self.drive_profile()

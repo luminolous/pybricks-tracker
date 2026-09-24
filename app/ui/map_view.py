@@ -48,6 +48,8 @@ EVENT_SYMBOLS = {
     "BUMP": "d",
     "WDOG": "s",
     "LAP": "star",
+    "TURN": "p",
+    "FINISH": "h",
 }
 
 
