@@ -334,3 +334,20 @@ step 1, the first junction wall.
   (default -40 %) over RAMP ms (default 400) while the sensor stays on full
   black or white turning the same way; grey for 80 ms or a direction flip
   starts it over. Suggested start: INNER 20, IMIN -40, RAMP 400.
+
+## 2026-09-26 — green wall: late turn, and headings that are not square
+
+Runs `20260926-1322..1331`, same settings. The three that failed at the green
+wall all turned there by the wall fallback (OBS 70-78 mm), then lost the line
+about a second later; the three that turned naturally went on.
+
+By the gyro, the top line (green wall to crossing) runs at about +10 degrees,
+not the ideal 0, and the start heading varies by a few degrees per run. With
+LOCK 12 around 0, the S lock left 2 degrees of room on the real line and cut
+the steering when the robot needed it; the wall turn aimed at 0 too.
+
+Fix: the segment heading is learnt from the gyro while the robot follows a
+line steadily (~1 s), and the ideal heading after a turn is only a first
+guess. The edge switch needs the heading within 30 degrees and steady (< 6
+degrees per 100 ms); S arms after 100 mm on the new line; the wall turn and
+turn counting use the learnt heading.

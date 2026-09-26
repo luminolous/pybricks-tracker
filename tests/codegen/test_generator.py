@@ -468,7 +468,7 @@ def test_turns_are_counted_by_gyro_heading(source: str) -> None:
     assert 'emit_e("TURN", "{}/{} {}".format(_step, len(ROUTE), ROUTE[_step - 1]))' in taken
     assert "_finish_from = robot.distance()" in taken
     # the edge switches only once the heading settled on the new line
-    assert "if _side_step < _step and settled and refl < BLACK_BELOW:" in track
+    assert "if _side_step < _step and near and _steady and refl < BLACK_BELOW:" in track
     # search sweeps must not count as turns
     assert "if not _search:\n        track_route(refl)" in function(source, "control_step")
 
@@ -581,13 +581,13 @@ def test_negative_inner_allows_sharper_turns_on_black_or_white_only() -> None:
 def test_edge_switch_waits_for_black_and_arms_s_after(source: str) -> None:
     track = function(source, "track_route")
     # switch only settled and on full black: the new edge's control crosses the tape
-    assert "settled = abs(_heading_deg - _step_heading) < SETTLE_DEG" in track
-    assert "if _side_step < _step and settled and refl < BLACK_BELOW:" in track
+    assert "near = abs(_heading_deg - _step_heading) < SETTLE_DEG" in track
+    assert "if _side_step < _step and near and _steady and refl < BLACK_BELOW:" in track
     assert "_s_clear = False" in track
     # S arms once switched and off black again, so the switch is not a crossing
     assert "if _side_step == _step and not _s_clear and refl >= BLACK_BELOW:" in track
     armed = function(source, "straight_armed")
-    assert "return straight_pending() and _side_step == _step and _s_clear" in armed
+    assert "return straight_pending() and ready" in armed
     # the wall rule still treats a pending S as "do not turn"
     control = function(source, "control_step")
     assert "if _step < len(ROUTE) and not straight_pending():" in control
@@ -604,3 +604,15 @@ def test_full_turn_sharpens_while_the_sensor_stays_off_the_edge(source: str) -> 
     commands = function(source, "check_commands")
     assert 'emit_e("ACK", "IMIN:{}".format(INNER_MIN_PCT))' in commands
     assert "INNER_RAMP_MS = max(0.0, min(3000.0, float(value)))" in commands
+
+
+def test_segment_heading_is_learnt_from_the_gyro(source: str) -> None:
+    track = function(source, "track_route")
+    # steady: heading moved less than STEADY_DEG in the last 100 ms
+    assert "_steady = abs(_heading_deg - _h_ref) < STEADY_DEG" in track
+    # only while following this segment steadily, never mid-turn
+    assert "if near and _steady and _side_step == _step:" in track
+    assert "_step_heading += ANCHOR_RATE * (_heading_deg - _step_heading)" in track
+    assert "SETTLE_DEG = 30" in source and "ARM_MM = 100" in source
+    armed = function(source, "straight_armed")
+    assert "robot.distance() - _arm_from >= ARM_MM" in armed
