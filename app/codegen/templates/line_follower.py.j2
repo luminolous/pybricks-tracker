@@ -17,6 +17,15 @@
 # PD steering in between never reverses a wheel. The search swings on the
 # stopped inner wheel.
 #
+# Adaptive full turn (2026-09-26): one INNER could not serve both the 90
+# degree green-wall corner (-25 was too sharp there) and the hairpin after the
+# zigzag (-20 was not sharp enough). The full turn now starts at INNER_PCT and
+# sharpens toward INNER_MIN_PCT over INNER_RAMP_MS while the sensor stays on
+# full black or white turning the same way. A corner is done before it
+# sharpens much; a hairpin keeps the sensor off the edge and gets the sharp
+# turn. Back in the grey band for more than GRACE_MS, or turning the other
+# way, starts it over at INNER_PCT.
+#
 # Full white turns as hard as full black (2026-09-25). The original only
 # pivoted on black; on white the PD gave KP * error (73 deg/s against 102 on
 # black at SPD 250), so the robot came back from white slower than it left
@@ -80,6 +89,10 @@ _last_error = 0
 # integral must not learn from (windup), and is capped at INTEGRAL_MAX.
 _integral = 0.0
 INTEGRAL_MAX = 50
+GRACE_MS = 80  # grey this long ends the current full turn's ramp
+_full_dir = 0  # direction of the current full turn, 0 when none
+_full_timer = StopWatch()  # how long the current full turn has lasted
+_grey_timer = StopWatch()  # time since the last full-turn loop
 _white_timer = StopWatch()
 _white_from = 0  # robot.distance() when the sensor last left the line
 _search = 0  # 0 following, 1 first sweep, 2 return sweep
@@ -173,6 +186,21 @@ def track_straight(refl):
     if _crossing:
         _crossing = False
         step_taken()
+
+
+def full_turn_inner(direction):
+    # INNER_PCT when a full turn starts, sharpening to INNER_MIN_PCT over
+    # INNER_RAMP_MS while it lasts, as a fraction (-1..1) for arc_turn().
+    global _full_dir
+    if direction != _full_dir or _grey_timer.time() > GRACE_MS:
+        _full_dir = direction
+        _full_timer.reset()
+    _grey_timer.reset()
+    if INNER_RAMP_MS <= 0:
+        share = 1.0
+    else:
+        share = min(1.0, _full_timer.time() / INNER_RAMP_MS)
+    return (INNER_PCT + (INNER_MIN_PCT - INNER_PCT) * share) / 100
 
 
 def arc_turn(inner):
@@ -379,9 +407,10 @@ def control_step(n, refl):
         return
 
     if refl < BLACK_BELOW or refl > WHITE_ABOVE:
-        # off the edge on either side: the sharpest arc back toward it, inner
-        # wheel at INNER_PCT (not a pivot in place)
-        STEER = correction_dir(error) * arc_turn(INNER_PCT / 100)
+        # off the edge on either side: a full arc back toward it, sharpening
+        # the longer it lasts (INNER_PCT -> INNER_MIN_PCT)
+        direction = correction_dir(error)
+        STEER = direction * arc_turn(full_turn_inner(direction))
         STATE = "PIVOT"
         light(Color.RED if refl < BLACK_BELOW else Color.GREEN)
         reset_integral()

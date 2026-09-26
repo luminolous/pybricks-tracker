@@ -1,7 +1,7 @@
 """Tuning knobs: slider plus exact-entry field, and the value the hub acknowledged.
 
 Each program shows only the knobs it uses (its group):
-- line, in three foldable sections: PID (KP, KI, KD), Speed (SPD, INNER, SRCH)
+- line, in three foldable sections: PID (KP, KI, KD), Speed (SPD, INNER, IMIN, RAMP, SRCH)
   and Route (THR, FIN, LOCK, and the route: L/R/S step buttons rendered into
   the program at Run). The knobs are sent live and acknowledged. A folded
   section shows a one-line summary instead, so the event list keeps its room.
@@ -67,6 +67,8 @@ KNOBS = (
     Knob("kd", "KD", -20.0, 20.0, 0.1, 2, section="pid"),
     Knob("base_speed_mm_s", "SPD", 0.0, SPD_MAX, 5.0, 0, " mm/s", LINE_AND_TELEOP, section="speed"),
     Knob("inner_pct", "INNER", -100.0, 100.0, 5.0, 0, " %", section="speed"),
+    Knob("inner_min_pct", "IMIN", -100.0, 100.0, 5.0, 0, " %", section="speed"),
+    Knob("inner_ramp_ms", "RAMP", 0.0, 3000.0, 50.0, 0, " ms", section="speed"),
     Knob("search_deg_s", "SRCH", 10.0, TRN_MAX, 5.0, 0, DEG_S, section="speed"),
     Knob("obstacle_threshold_mm", "THR", 20.0, 300.0, 5.0, 0, " mm", integer=True, section="route"),
     Knob("finish_mm", "FIN", 0.0, 5000.0, 10.0, 0, " mm", section="route"),

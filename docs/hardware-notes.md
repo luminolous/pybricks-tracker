@@ -330,3 +330,7 @@ step 1, the first junction wall.
   FOLLOW once the wall was out of range).
 - INNER is still one value for every full turn: -20 reached the hairpin but
   did not take it cleanly.
+- Added an adaptive full turn: it starts at INNER and sharpens toward IMIN
+  (default -40 %) over RAMP ms (default 400) while the sensor stays on full
+  black or white turning the same way; grey for 80 ms or a direction flip
+  starts it over. Suggested start: INNER 20, IMIN -40, RAMP 400.

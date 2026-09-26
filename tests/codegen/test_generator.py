@@ -327,7 +327,7 @@ def test_turns_never_run_a_wheel_backwards(source: str) -> None:
     control = function(source, "control_step")
     # full black or full white: the sharpest arc, inner wheel at INNER_PCT
     assert "if refl < BLACK_BELOW or refl > WHITE_ABOVE:" in control
-    assert "STEER = correction_dir(error) * arc_turn(INNER_PCT / 100)" in control
+    assert "STEER = direction * arc_turn(full_turn_inner(direction))" in control
     # PD on the edge never turns sharper than that
     # PD never reverses a wheel, even when INNER is below 0
     assert "limit = arc_turn(max(0.0, INNER_PCT) / 100)" in control
@@ -347,7 +347,7 @@ def test_turns_never_run_a_wheel_backwards(source: str) -> None:
 def test_pivot_and_white_timer_follow_the_original(source: str) -> None:
     control = function(source, "control_step")
     assert "if refl < BLACK_BELOW or refl > WHITE_ABOVE:" in control
-    assert "STEER = correction_dir(error) * arc_turn(INNER_PCT / 100)" in control
+    assert "STEER = direction * arc_turn(full_turn_inner(direction))" in control
     assert "if refl <= WHITE_ABOVE:\n        on_line()" in control
     # lost needs time AND forward travel: swinging back after a pivot is not lost
     assert (
@@ -591,3 +591,16 @@ def test_edge_switch_waits_for_black_and_arms_s_after(source: str) -> None:
     # the wall rule still treats a pending S as "do not turn"
     control = function(source, "control_step")
     assert "if _step < len(ROUTE) and not straight_pending():" in control
+
+
+def test_full_turn_sharpens_while_the_sensor_stays_off_the_edge(source: str) -> None:
+    assert re.search(r"^INNER_MIN_PCT = -40.0", source, re.MULTILINE)
+    assert re.search(r"^INNER_RAMP_MS = 400.0", source, re.MULTILINE)
+    ramp = function(source, "full_turn_inner")
+    # starts over when the direction flips or the sensor was grey for GRACE_MS
+    assert "if direction != _full_dir or _grey_timer.time() > GRACE_MS:" in ramp
+    assert "share = min(1.0, _full_timer.time() / INNER_RAMP_MS)" in ramp
+    assert "return (INNER_PCT + (INNER_MIN_PCT - INNER_PCT) * share) / 100" in ramp
+    commands = function(source, "check_commands")
+    assert 'emit_e("ACK", "IMIN:{}".format(INNER_MIN_PCT))' in commands
+    assert "INNER_RAMP_MS = max(0.0, min(3000.0, float(value)))" in commands

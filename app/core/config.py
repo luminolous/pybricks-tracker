@@ -189,6 +189,10 @@ class TuningParams:
     # 180 deg/s. Lost line: swing on the stopped inner wheel at
     # search_deg_s (the original spun in place at 150 after backing up).
     inner_pct: float = 20.0
+    # Adaptive full turn: from inner_pct toward inner_min_pct over
+    # inner_ramp_ms while the sensor stays off the edge (hairpins).
+    inner_min_pct: float = -40.0
+    inner_ramp_ms: float = 400.0
     search_deg_s: float = 60.0
     # Teleop drives forward at SPD and turns at this rate.
     teleop_turn_deg_s: float = 180.0

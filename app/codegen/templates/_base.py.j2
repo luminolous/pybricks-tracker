@@ -58,7 +58,9 @@ KI = {{ tuning.ki }}
 KD = {{ tuning.kd }}
 BASE_SPEED = {{ tuning.base_speed_mm_s }}
 OBSTACLE_MM = {{ tuning.obstacle_threshold_mm }}
-INNER_PCT = {{ tuning.inner_pct }}  # line follower turn on black: inner wheel % of outer
+INNER_PCT = {{ tuning.inner_pct }}  # line follower full turn as it starts: inner wheel % of outer
+INNER_MIN_PCT = {{ tuning.inner_min_pct }}  # ... the sharpest it gets while the sensor stays off the edge
+INNER_RAMP_MS = {{ tuning.inner_ramp_ms }}  # ... and how long that takes
 SEARCH_RATE = {{ tuning.search_deg_s }}  # deg/s, line follower sweep for a lost line
 FINISH_MM = {{ tuning.finish_mm }}  # line follower: route end to finish, minimum mm
 LOCK_DEG = {{ tuning.route_lock_deg }}  # line follower, route step S: heading lock
@@ -225,6 +227,7 @@ def split_once(text):
 
 def check_commands():
     global KP, KI, KD, BASE_SPEED, OBSTACLE_MM, INNER_PCT, SEARCH_RATE, FINISH_MM, LOCK_DEG
+    global INNER_MIN_PCT, INNER_RAMP_MS
     global STOPPED, PAUSED, DRV_SPEED, DRV_TURN
     while _poll.poll(0):
         line = usys.stdin.readline().strip()
@@ -245,6 +248,12 @@ def check_commands():
             elif key == "SPD":
                 BASE_SPEED = float(value)
                 emit_e("ACK", "SPD:{}".format(BASE_SPEED))
+            elif key == "IMIN":
+                INNER_MIN_PCT = max(-100.0, min(100.0, float(value)))
+                emit_e("ACK", "IMIN:{}".format(INNER_MIN_PCT))
+            elif key == "RAMP":
+                INNER_RAMP_MS = max(0.0, min(3000.0, float(value)))
+                emit_e("ACK", "RAMP:{}".format(INNER_RAMP_MS))
             elif key == "INNER":
                 INNER_PCT = max(-100.0, min(100.0, float(value)))
                 emit_e("ACK", "INNER:{}".format(INNER_PCT))

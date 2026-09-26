@@ -74,6 +74,8 @@ def test_set_values_is_silent(qapp) -> None:
         "kd": -6.0,
         "base_speed_mm_s": 120,
         "inner_pct": 20,
+        "inner_min_pct": -40,
+        "inner_ramp_ms": 400,
         "search_deg_s": 60,
         "teleop_turn_deg_s": 180,
         "drift_speed_mm_s": 150,
@@ -95,7 +97,7 @@ def test_modes_enable_and_hint(qapp) -> None:
     panel.set_mode("config")
     panel.set_open("route", True)
     groups = {
-        "line": {"KP", "KI", "KD", "SPD", "INNER", "SRCH", "THR", "FIN", "LOCK"},
+        "line": {"KP", "KI", "KD", "SPD", "INNER", "IMIN", "RAMP", "SRCH", "THR", "FIN", "LOCK"},
         "teleop": {"SPD", "TURN"},
         "drift": {"DSPD", "DTRN"},
     }
