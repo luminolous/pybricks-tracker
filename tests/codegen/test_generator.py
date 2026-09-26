@@ -453,10 +453,12 @@ def test_bad_route_is_refused(route: str) -> None:
 
 def test_edge_follows_the_next_turn(source: str) -> None:
     flip = function(source, "edge_flip")
-    assert "if not ROUTE:\n        return 1" in flip  # no route: the original behaviour
-    assert "tuned = 1 if KP < 0 else -1" in flip  # negative KP tracks the right edge
-    assert "side = side_of(_side_step)" in flip
-    assert "return tuned * turn_sign(side)" in flip
+    # no route: the original behaviour, KP's own edge
+    assert "side = side_of(i) if ROUTE else None" in function(source, "flip_for")
+    # negative KP tracks the right edge
+    assert "tuned = 1 if KP < 0 else -1" in function(source, "flip_for")
+    assert "return flip_for(_side_step)" in flip
+    assert "return tuned * turn_sign(side)" in function(source, "flip_for")
     control = function(source, "control_step")
     assert (
         "STEER = edge_flip() * (KP * error + KI * _integral + KD * (error - _last_error))"
@@ -549,8 +551,10 @@ def test_straight_step_locks_heading_across_a_crossing() -> None:
     assert re.search(r"^LOCK_DEG = 25.0", source, re.MULTILINE)
     assert "CROSS_MM = 30" in source
     # S keeps the KP edge and the ideal heading; the lock cuts steering past it
-    # S keeps the edge of the turn before it
-    assert 'while i >= 0 and ROUTE[i] == "S":' in function(source, "side_of")
+    # S uses KP's own edge
+    assert 'if i >= len(ROUTE) or ROUTE[i] == "S":\n        return None' in function(
+        source, "side_of"
+    )
     lock = function(source, "lock_heading")
     assert "off = _heading_deg - _step_heading" in lock
     assert "if off >= LOCK_DEG and steer < 0:" in lock
@@ -588,7 +592,7 @@ def test_edge_switch_walks_into_the_tape_and_arms_s_when_settled(source: str) ->
     track = function(source, "track_route")
     assert "near = abs(_heading_deg - _step_heading) < SETTLE_DEG" in track
     # same edge: nothing to cross; otherwise settle, walk into the tape, switch on black
-    assert "if side_of(_step) == side_of(_side_step):" in track
+    assert "if flip_for(_step) == flip_for(_side_step):" in track
     assert "elif near and _steady:\n            _switch_ready = True" in track
     assert "if _switch_ready and refl < BLACK_BELOW:" in track
     control = function(source, "control_step")
@@ -597,7 +601,12 @@ def test_edge_switch_walks_into_the_tape_and_arms_s_when_settled(source: str) ->
     # S arms when settled after the previous step, no distance wait
     assert "if near and _steady:\n            _s_settled = True" in track
     armed = function(source, "straight_armed")
-    assert "_side_step == _step and _s_clear and _s_settled" in armed
+    assert "switched = _side_step == _step and _s_clear" in armed
+    assert "return straight_pending() and _s_settled and (switched or _s_forced)" in armed
+    # the switch before an S gives way to the lock S_FORCE_MM after the last step
+    assert "if robot.distance() - _step_from >= S_FORCE_MM:" in track
+    assert "if _side_step < _step and not _s_forced:" in track
+    assert "S_FORCE_MM = 120" in source
     # after a wall turn: the edge of the turn just made
     assert "_side_step = max(_side_step, _step - 1)" in control
     # the wall rule still treats a pending S as "do not turn"
@@ -650,7 +659,7 @@ def test_steady_is_earned_again_after_a_wall_turn_or_search(source: str) -> None
 
 def test_back_to_kp_edge_after_the_route_and_lock_past_the_crossing(source: str) -> None:
     side = function(source, "side_of")
-    assert "if i >= len(ROUTE):\n        return None" in side  # KP's own edge again
+    assert 'if i >= len(ROUTE) or ROUTE[i] == "S":\n        return None' in side  # KP's edge
     cross = function(source, "track_straight")
     assert "_lock_until = robot.distance() + LOCK_AFTER_MM" in cross
     assert "LOCK_AFTER_MM = 60" in source

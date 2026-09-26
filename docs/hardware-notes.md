@@ -411,3 +411,14 @@ finish. Two bugs showed:
 Also: the test ids for the hub source checks were the whole program; the line
 follower grew past Windows' 32767-character environment limit
 (PYTEST_CURRENT_TEST). The ids are now the program names.
+
+Correction, same day (run `20260926-142702`): letting S borrow the R edge was
+wrong. From the green wall on the robot ran on the right edge (steer vs error
+sign: 0 % same-sign on the top segment), and right after the crossing it lost
+the line and pushed into a stand (4 x STALL L, gyro still, wheels turning) in
+both runs that way. The runs on 3731e0a used KP's own edge for S and went
+through the crossing cleanly. S now uses KP's edge again; the switch after
+the R is active, and if it is not done 120 mm after the R the lock arms on the
+current edge and the switch follows after the crossing. The same/different
+edge test now compares physical edges (for KP > 0, L is KP's edge), not step
+letters.

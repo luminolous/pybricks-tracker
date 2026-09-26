@@ -109,6 +109,9 @@ CROSS_MM = 30  # S: full black this far forward, heading locked, is the crossing
 # left it, the robot came off at -16 degrees, lost the line and pushed into a
 # wall stand while searching (2026-09-26).
 LOCK_AFTER_MM = 60
+# If the edge switch before an S is not done this far after the previous step,
+# drop it and arm the lock on the current edge: the crossing must not come first.
+S_FORCE_MM = 120
 
 _last_error = 0
 # KI term: error-seconds summed only in the grey edge band. It restarts on every
@@ -144,6 +147,8 @@ _lock_until = -1  # robot.distance() up to which the S lock still holds after th
 _s_clear = True  # S: the sensor has left black since the edge switch; only then look for a crossing
 _switch_ready = False  # settled, walking into the tape to switch edge
 _s_settled = False  # S: settled on the segment after the previous step; the lock may act
+_s_forced = False  # S: armed on the old edge, the switch dropped (S_FORCE_MM)
+_step_from = 0  # robot.distance() when the last step was taken
 _guess_heading = 0.0  # the step's first guess at its segment heading
 _h_ref = 0.0  # heading STEADY_MS ago, for the steady test
 _steady = False
@@ -164,26 +169,27 @@ def turn_sign(c):
 
 def side_of(i):
     # The edge side ("L" or "R") step i follows, or None for KP's own edge.
-    # S keeps the edge of the turn before it: no switch just before a crossing,
-    # the heading lock carries it across. Past the last step the robot goes back
-    # to KP's own edge (2026-09-26: it stayed on the right edge to the finish).
-    if i >= len(ROUTE):
+    # S and everything past the last step use KP's own edge. Borrowing the R
+    # edge for S (2026-09-26) put the robot on the right side from the green
+    # wall on; after the crossing it lost the line and pushed into a stand in
+    # both runs, while the runs on KP's edge went through cleanly.
+    if i >= len(ROUTE) or ROUTE[i] == "S":
         return None
-    while i >= 0 and ROUTE[i] == "S":
-        i -= 1
-    return ROUTE[i] if i >= 0 else None
+    return ROUTE[i]
 
 
-def edge_flip():
+def flip_for(i):
     # 1 keeps the edge the KP sign tracks, -1 tracks the other one. Negative
     # KP tracks the right edge, and an edge follower takes that side's branch.
-    if not ROUTE:
-        return 1
-    side = side_of(_side_step)
+    side = side_of(i) if ROUTE else None
     if side is None:
         return 1
     tuned = 1 if KP < 0 else -1
     return tuned * turn_sign(side)
+
+
+def edge_flip():
+    return flip_for(_side_step)
 
 
 def straight_pending():
@@ -196,7 +202,8 @@ def straight_armed():
     # corner at 30 degrees off, the lock blocked the way back to the line).
     # On a short segment before the crossing the old 100 mm arming came too late
     # and the edge pulled the robot into a branch first (2026-09-26).
-    return straight_pending() and _side_step == _step and _s_clear and _s_settled
+    switched = _side_step == _step and _s_clear
+    return straight_pending() and _s_settled and (switched or _s_forced)
 
 
 def lock_heading(steer):
@@ -212,10 +219,12 @@ def lock_heading(steer):
 
 
 def step_taken():
-    global _step, _finish_from, _switch_ready, _s_settled
+    global _step, _finish_from, _switch_ready, _s_settled, _s_forced, _step_from
     _step += 1
     _switch_ready = False
     _s_settled = False
+    _s_forced = False
+    _step_from = robot.distance()
     emit_e("TURN", "{}/{} {}".format(_step, len(ROUTE), ROUTE[_step - 1]))
     if _step == len(ROUTE):
         _finish_from = robot.distance()
@@ -315,7 +324,7 @@ def track_route(refl):
     # the sensor across. Switching on white put the sensor on the wrong side:
     # the new edge's control then turned away from the line (2026-09-26).
     global _side_step, _step_heading, _s_clear, _h_ref, _steady, _guess_heading
-    global _switch_ready, _s_settled
+    global _switch_ready, _s_settled, _s_forced
     if _steady_timer.time() >= STEADY_MS:
         _steady = abs(_heading_deg - _h_ref) < STEADY_DEG
         _h_ref = _heading_deg
@@ -326,9 +335,13 @@ def track_route(refl):
         learnt = _step_heading + ANCHOR_RATE * (_heading_deg - _step_heading)
         low = _guess_heading - ANCHOR_MAX_DEG
         _step_heading = max(low, min(_guess_heading + ANCHOR_MAX_DEG, learnt))
-    if _side_step < _step:
-        if side_of(_step) == side_of(_side_step):
-            _side_step = _step  # same edge: nothing to cross
+    if straight_pending() and not _s_forced and _side_step < _step:
+        if robot.distance() - _step_from >= S_FORCE_MM:
+            _s_forced = True  # the crossing may be close: lock on this edge
+            _switch_ready = False
+    if _side_step < _step and not _s_forced:
+        if flip_for(_step) == flip_for(_side_step):
+            _side_step = _step  # same physical edge (L is KP's edge for KP > 0)
         elif near and _steady:
             _switch_ready = True
         if _switch_ready and refl < BLACK_BELOW:
