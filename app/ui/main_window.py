@@ -71,7 +71,7 @@ from app.core.replay import Replay
 from app.core.state import EventRecord, PortScan, RobotState, TelemetryWatch
 from app.core.teleop import TeleopDriver
 from app.core.tuning import TuningSender
-from app.ui.battery_gauge import BatteryGauge
+from app.ui.battery_gauge import NEARLY_EMPTY_MV, BatteryGauge
 from app.ui.code_preview import CodePreview
 from app.ui.console_pane import ConsolePane
 from app.ui.dialogs.calibration import CalibrationDialog
@@ -210,6 +210,7 @@ class MainWindow(QMainWindow):
         self._scan_done = asyncio.Event()
         self._tasks: set[asyncio.Task] = set()
         self._beep_task: asyncio.Task | None = None
+        self._battery_warned = False
         self._drain_task: asyncio.Task | None = None
         self._heartbeat_task: asyncio.Task | None = None
         self._rx_count = 0
@@ -1129,8 +1130,11 @@ class MainWindow(QMainWindow):
         self._show_rec_label()
         if view.battery_mv is not None:
             self.battery_label.setText(f"{view.battery_mv / 1000:.2f} V")
-        live_battery = self.conn.battery if self._replay is None else None
-        self.battery_gauge.set_state(live_battery, view.battery_mv)
+        live = self._replay is None
+        live_battery = self.conn.battery if live else None
+        shown_mv = view.battery_mv if (not live or self.conn.connected) else None
+        self.battery_gauge.set_state(live_battery, shown_mv)
+        self._warn_battery(shown_mv if live else None)
         self._show_loop_dt()
         if self._calibration_dialog is not None and self._calibration_dialog.isVisible():
             self._calibration_dialog.show_live(self.state.reflection)
@@ -1171,6 +1175,19 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self.banner.place()
+
+    def _warn_battery(self, battery_mv: int | None) -> None:
+        """One console warning per discharge once the pack is near the 6.0 V cut-off."""
+        if battery_mv is None:
+            return
+        if battery_mv < NEARLY_EMPTY_MV and not self._battery_warned:
+            self._battery_warned = True
+            self.note(
+                f"Battery nearly empty ({battery_mv / 1000:.2f} V): the hub switches off "
+                "at 6.0 V. Charge now."
+            )
+        elif battery_mv > NEARLY_EMPTY_MV + 200:
+            self._battery_warned = False  # charged: warn again next time
 
     def _show_loop_dt(self) -> None:
         detail = self.view_state.detail

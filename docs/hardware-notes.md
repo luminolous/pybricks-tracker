@@ -239,3 +239,17 @@ Recordings `20260924-0502..0525`, the last ones with INNER 20 at SPD 250.
 - One 13 s stretch read reflection 0 with the heading wandering while a right
   turn was commanded: the robot was lifted. Reflection 0 means no surface
   under the sensor, which the line follower takes as black.
+
+## 2026-09-26 — battery ran flat at 6.0 V
+
+A calibration run (`sessions/20260926-085612_calibrate.jsonl`) started at
+6.02 V and the hub switched itself off at 6.00 V. The line follower runs on
+2026-09-24 were already at 6.8 V. The readings were right: the hub protects
+the Li-ion pack. Pybricks thresholds for LEGO rechargeable packs (from the
+firmware, matching what we saw): full 8.19 V, OK above 7.2 V, low-voltage
+warning below 6.8 V, shutdown at 6.0 V. Voltage sags under motor load, so the
+hub can cut out mid-run around 6.1-6.2 V at rest.
+
+The header icon used to show only the flags, so it stayed orange from 6.8 V
+until the hub died. Now the fill follows the voltage from 6.0 V (empty) to
+8.19 V (full), turns red below 6.3 V, and the console warns once: charge now.
