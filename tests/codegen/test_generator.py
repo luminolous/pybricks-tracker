@@ -500,9 +500,12 @@ def test_wall_turn_runs_by_gyro_then_sweeps_back_first(source: str) -> None:
 
 def test_finish_only_after_the_route_and_fin_distance(source: str) -> None:
     control = function(source, "control_step")
-    assert (
-        "if _finish_from is not None and robot.distance() - _finish_from >= FINISH_MM:" in control
-    )
+    assert "if finish_reached():" in control
+    reached = function(source, "finish_reached")
+    # opt-in: FIN 0 (the default) never finishes, every line end is searched
+    assert "if FINISH_MM <= 0 or _finish_from is None:\n        return False" in reached
+    assert "return robot.distance() - _finish_from >= FINISH_MM" in reached
+    assert re.search(r"^FINISH_MM = 0.0", source, re.MULTILINE)
     finish = function(source, "finish")
     assert 'emit_e("FINISH", int(robot.distance() - _finish_from))' in finish
     assert "STOPPED = True" in finish

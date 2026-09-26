@@ -195,8 +195,8 @@ class TuningParams:
     drift_speed_mm_s: float = 150.0
     drift_turn_deg_s: float = 90.0
     # Line follower route (protocol.md): planned turns in order, e.g. "RLLR".
-    # Empty: plain line following. finish_mm: after the last turn, the first
-    # line end at least this far on is the finish.
+    # Empty: plain line following. finish_mm: 0 = no finish (default); above 0,
+    # the first line end at least this far after the last step is the finish.
     route: str = ""
     finish_mm: float = 0.0
     # Route step S: heading lock while crossing, degrees from the segment heading.

@@ -25,8 +25,8 @@
 # branch at the next junction; the gyro counts a turn as taken. S goes straight
 # across a crossing: the gyro locks the heading within LOCK_DEG, so the edge
 # cannot pull the robot into a branch. If a wall shows up while a turn is
-# pending, the robot turns the planned way on the spot. After the last step, a
-# line end at least FINISH_MM later is the finish.
+# pending, the robot turns the planned way on the spot. With FINISH_MM above 0,
+# the first line end at least that far after the last step is the finish.
 
 from pybricks.parameters import Color
 
@@ -210,6 +210,13 @@ def track_route(refl):
         step_taken()
 
 
+def finish_reached():
+    # Opt-in: FINISH_MM 0 turns it off, so a line end is always searched.
+    if FINISH_MM <= 0 or _finish_from is None:
+        return False
+    return robot.distance() - _finish_from >= FINISH_MM
+
+
 def finish():
     global STATE, STEER, STOPPED
     robot.stop()
@@ -332,7 +339,7 @@ def control_step(n, refl):
     if refl <= WHITE_ABOVE:
         on_line()
     elif _white_timer.time() > LOST_MS and robot.distance() - _white_from >= LOST_MM:
-        if _finish_from is not None and robot.distance() - _finish_from >= FINISH_MM:
+        if finish_reached():
             finish()
             return
         start_search(error)
