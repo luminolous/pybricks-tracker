@@ -45,6 +45,18 @@ DRIFT_RECORDS_DIR = CONFIGS_DIR / "drift"
 RunFn = Callable[[str], Awaitable[bool]]
 
 
+# The turn test's real rotation is typed as a total, prefilled from the IMU. An
+# offset from 1800 could not tell half a turn short from half a turn over, nor
+# catch a miscount of a whole turn (2026-09-26: counted 1620, IMU 1261 twice).
+ROTATION_CHECK_DEG = 90  # warn when the typed total and the IMU differ by more
+
+
+def rotation_text(total_deg: float) -> str:
+    """1261 -> "= 3 turns + 181°"."""
+    turns, rest = divmod(round(total_deg), 360)
+    return f"= {turns} turn{'' if turns == 1 else 's'} + {rest}°"
+
+
 def _spin(low: float, high: float, suffix: str, value: float = 0.0) -> QDoubleSpinBox:
     spin = QDoubleSpinBox()
     spin.setLocale(QLocale.c())
@@ -89,14 +101,18 @@ class DriftTestDialog(QDialog):
 
         # Measurement inputs, one page per test.
         self.real_distance = _spin(0, 5000, " mm", 1000)
-        self.turn_offset = _spin(-360, 360, " °")
+        self.real_rotation = _spin(0, 3600, " °", DRIFT_TESTS["turns"].commanded_rotation_deg)
+        self.real_rotation.setDecimals(0)
+        self.rotation_hint = label("", tone="dim")
+        self.rotation_hint.setWordWrap(True)
+        self.real_rotation.valueChanged.connect(self._rotation_changed)
         self.real_x = _spin(-2000, 2000, " mm")
         self.real_y = _spin(-2000, 2000, " mm")
         self.inputs = QStackedWidget()
         self.inputs.addWidget(self._page(("Measured distance", self.real_distance)))
-        self.inputs.addWidget(
-            self._page(("Ended past the start heading by (+ over, − short)", self.turn_offset))
-        )
+        turns_page = self._page(("Real total rotation (5 turns = 1800°)", self.real_rotation))
+        turns_page.layout().addWidget(self.rotation_hint, 1, 0, 1, 2)
+        self.inputs.addWidget(turns_page)
         self.inputs.addWidget(
             self._page(
                 ("Real end x from start (forward)", self.real_x),
@@ -164,6 +180,14 @@ class DriftTestDialog(QDialog):
         set_prop(self.status, "tone", "ok")
         self.estimate_label.setText(self._estimate_text(final_pose))
         set_prop(self.estimate_label, "tone", "text")
+        if self.test_key == "turns":
+            # prefilled from the IMU: the user only corrects it if their count differs
+            self.real_rotation.setValue(round(abs(final_pose.heading_deg)))
+            self.status.setText(
+                "Done. The IMU total is filled in: count the turns and change it only if "
+                "your count differs, then compute."
+            )
+        self._rotation_changed()
         self.compute_button.setEnabled(True)
 
     def compute(self) -> None:
@@ -183,8 +207,7 @@ class DriftTestDialog(QDialog):
                 ]
                 result, self._suggested = asdict(r), r.suggested
             elif key == "turns":
-                real = DRIFT_TESTS["turns"].commanded_rotation_deg + self.turn_offset.value()
-                r = analyze_turns(geometry, pose.heading_deg, real)
+                r = analyze_turns(geometry, pose.heading_deg, self.real_rotation.value())
                 verdict = "PASS" if r.passed else "FAIL"
                 lines = [
                     f"wheels     {r.wheel_error_deg_per_rev:+.1f}° per revolution",
@@ -229,6 +252,20 @@ class DriftTestDialog(QDialog):
             return f"Estimate: IMU turned {abs(pose.heading_deg):.1f}°"
         return f"Estimate: ended at x {pose.x_mm:.1f} mm, y {pose.y_mm:.1f} mm"
 
+    def _rotation_changed(self) -> None:
+        total = self.real_rotation.value()
+        text, tone = rotation_text(total), "dim"
+        if self._estimate is not None and self.test_key == "turns":
+            gap = total - abs(self._estimate.heading_deg)
+            if abs(gap) > ROTATION_CHECK_DEG:
+                text += (
+                    f"  ·  {gap:+.0f}° from the IMU. Recount: one full turn is 360°, "
+                    "and the IMU measured this run itself."
+                )
+                tone = "warn"
+        self.rotation_hint.setText(text)
+        set_prop(self.rotation_hint, "tone", tone)
+
     def _test_changed(self) -> None:
         self.inputs.setCurrentIndex(self.test_combo.currentIndex())
         self.instructions.setText(DRIFT_TESTS[self.test_key].instructions)
@@ -236,6 +273,7 @@ class DriftTestDialog(QDialog):
         self._suggested = None
         self.estimate_label.setText("Estimate: run the test first.")
         set_prop(self.estimate_label, "tone", "dim")
+        self._rotation_changed()
         self.result.setText("")
         self.compute_button.setEnabled(False)
         self.apply_button.setEnabled(False)
@@ -271,7 +309,7 @@ class DriftTestDialog(QDialog):
             "estimate": asdict(pose),
             "measured": {
                 "distance_mm": self.real_distance.value(),
-                "turn_offset_deg": self.turn_offset.value(),
+                "rotation_deg": self.real_rotation.value(),
                 "end_x_mm": self.real_x.value(),
                 "end_y_mm": self.real_y.value(),
             },

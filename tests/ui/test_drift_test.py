@@ -51,9 +51,31 @@ def test_turns_verdict(qapp, tmp_path) -> None:
     d = dialog(tmp_path, [])
     select(d, "turns")
     d.program_finished(Pose(20000, 0.0, 0.0, -1805.0))
-    d.turn_offset.setValue(-4)
+    assert d.real_rotation.value() == 1805  # prefilled from the IMU
+    d.real_rotation.setValue(1796)
     d.compute()
     assert "PASS" in d.result.text()
+
+
+def test_turns_total_rotation_from_imu_and_miscount_warning(qapp, tmp_path) -> None:
+    from app.ui.dialogs.drift_test import rotation_text
+
+    assert rotation_text(1261) == "= 3 turns + 181°"
+    assert rotation_text(360) == "= 1 turn + 0°"
+    d = dialog(tmp_path, [])
+    select(d, "turns")
+    d.program_finished(Pose(20000, 0.0, 0.0, -1260.9))  # the 2026-09-26 run
+    assert d.real_rotation.value() == 1261
+    assert d.rotation_hint.text() == "= 3 turns + 181°"
+    d.real_rotation.setValue(1620)  # counted one turn too many
+    assert "+359° from the IMU" in d.rotation_hint.text()
+    assert d.rotation_hint.property("tone") == "warn"
+    d.real_rotation.setValue(1261)
+    d.compute()
+    # 112 * 1800 / 1261: the robot's wheels are further apart than configured
+    assert "112.00 → 159.87 mm" in d.result.text()
+    record = json.loads(d.last_record.read_text(encoding="utf-8"))
+    assert record["measured"]["rotation_deg"] == 1261
 
 
 def test_square_fail_offers_no_geometry(qapp, tmp_path) -> None:
