@@ -156,7 +156,7 @@ def finish():
     STATE = "STOP"
     emit_e("FINISH", int(robot.distance() - _finish_from))
     light(Color.GREEN)
-    hub.speaker.beep(800, 300)
+    beep(800, 300)
     STOPPED = True
 
 
@@ -193,7 +193,7 @@ def search_step(refl):
             STEER = 0
             STATE = "STOP"
             emit_e("GIVEUP")
-            hub.speaker.beep(400, 500)
+            beep(400, 500)
             STOPPED = True
             return
     STEER = _search_dir * SEARCH_RATE
@@ -219,7 +219,7 @@ def control_step(n, refl):
             _obstacle = True
             emit_e("OBS", _distance_mm)
             light(Color.MAGENTA)
-            hub.speaker.beep(1000, 100)
+            beep(1000, 100)
         robot.stop()
         STEER = 0
         if _step < len(ROUTE):

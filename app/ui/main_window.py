@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QEvent, QLocale, QObject, Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -37,9 +37,9 @@ from PySide6.QtWidgets import (
 
 from app.codegen.generator import (
     LOOP_MS,
-    SCAN_PORTS_PROGRAM,
     GeneratorError,
     generate,
+    scan_program,
     write_beep_program,
 )
 from app.core.beeps import beep_commands
@@ -83,7 +83,7 @@ from app.ui.map_view import MapView
 from app.ui.plot_panel import DT_WARN, PlotPanel
 from app.ui.port_panel import PortPanel
 from app.ui.replay_bar import BAR_HEIGHT_PX, ReplayBar, fmt_ms
-from app.ui.theme import caption, label, set_prop
+from app.ui.theme import ICON_DIR, caption, label, set_prop
 from app.ui.trail_colors import TRAIL_MODES
 from app.ui.tuning_panel import HUB_KEYS, MODE_GROUPS, TuningPanel
 
@@ -295,6 +295,13 @@ class MainWindow(QMainWindow):
         self.link_label = label("disconnected", tone="muted")
         self.run_state = label("IDLE", tone="muted", mono=True)
         self.mode_label = label("", tone="muted")
+        self.sound_button = QPushButton()
+        self.sound_button.setProperty("role", "small")
+        self.sound_button.setCheckable(True)
+        self.sound_button.setChecked(True)
+        self.sound_button.setFixedSize(30, 24)
+        self.sound_button.toggled.connect(self._sound_toggled)
+        self._show_sound(True)
         self.battery_gauge = BatteryGauge()
         self.battery_label = label("— V", mono=True)
         self.battery_label.setToolTip("Hub battery, from S lines (M5)")
@@ -320,6 +327,7 @@ class MainWindow(QMainWindow):
         self.rec_seg.hide()
         row.addWidget(self.rec_seg)
         row.addStretch()
+        row.addWidget(_segment(self.sound_button))
         row.addWidget(_segment(self.battery_gauge, self.battery_label))
         row.addWidget(_segment(label("loop", tone="muted"), self.loop_label))
         row.addWidget(_segment(label("rx", tone="muted"), self.rx_label))
@@ -598,9 +606,10 @@ class MainWindow(QMainWindow):
         self.scan.reset()
         self._scan_done.clear()
         self.port_panel.set_scanning()
-        self.note(f"running {SCAN_PORTS_PROGRAM.name}")
+        program = scan_program(self.sound_on)
+        self.note(f"running {program.name}")
         try:
-            await self.conn.run_file(SCAN_PORTS_PROGRAM)
+            await self.conn.run_file(program)
             await asyncio.wait_for(self._scan_done.wait(), timeout=SCAN_TIMEOUT_S)
         except HubConnectionError as exc:
             self.note(str(exc))
@@ -631,7 +640,7 @@ class MainWindow(QMainWindow):
             self.note(blocker)
             return False
         try:
-            path = generate(self.current_config(), mode, drift=drift)
+            path = generate(self.current_config(), mode, drift=drift, sound=self.sound_on)
         except GeneratorError as exc:
             self.note(str(exc))
             return False
@@ -684,7 +693,7 @@ class MainWindow(QMainWindow):
         if self._preview is None:
             self._preview = CodePreview(self)
         try:
-            path = generate(self.current_config(), "line_follower")
+            path = generate(self.current_config(), "line_follower", sound=self.sound_on)
         except GeneratorError as exc:
             self._preview.show_error(str(exc))
         else:
@@ -1261,9 +1270,25 @@ class MainWindow(QMainWindow):
 
     # -- beeps (app/core/beeps.py): always from the hub speaker ------------------
 
+    @property
+    def sound_on(self) -> bool:
+        return self.sound_button.isChecked()
+
+    def _show_sound(self, on: bool) -> None:
+        icon = "speaker-on.svg" if on else "speaker-off.svg"
+        self.sound_button.setIcon(QIcon(str(ICON_DIR / icon)))
+        self.sound_button.setToolTip(
+            "Hub sounds on. Click to mute." if on else "Hub sounds muted. Click to turn on."
+        )
+
+    def _sound_toggled(self, on: bool) -> None:
+        self._show_sound(on)
+        if self.conn.program_running and self._current_mode is not None:
+            self.note("Sound setting applies to the program's own beeps from the next run.")
+
     def beep(self, name: str) -> None:
         """Play tone `name` on the hub, however the hub is busy. Silent without a hub."""
-        if not self.HUB_BEEPS or not self.conn.connected:
+        if not self.HUB_BEEPS or not self.sound_on or not self.conn.connected:
             return
         if self.conn.program_running:
             ours = self._current_mode is not None and self._ready is not None

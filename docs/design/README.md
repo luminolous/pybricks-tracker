@@ -23,6 +23,8 @@ Known deviations in the Qt build:
 - Map ruler (not in the mockup): a small `role="small"` icon button pinned
   top-left of the plot, checked = accent. Measurement: dashed accent line,
   hollow end points, mono label on a surface-coloured box beside the midpoint.
+- Header speaker button (not in the mockup), left of the battery: checked =
+  hub sounds on (accent box), unchecked = muted (dim icon with a cross).
 - Device names are shortened in the port table (`Motor`, `Ultrasonic`); the
   full name is the tooltip.
 

@@ -4,6 +4,7 @@ beep-and-end program while the hub is idle, silence without a hub."""
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 from pybricksdev.ble.pybricks import StatusFlag
@@ -86,3 +87,21 @@ async def test_calibration_samples_beep(window) -> None:
     await window._beep_task
     assert window.fakes.hub.ran[-1].endswith("hub_beep_black.py")
     dialog.close()
+
+
+async def test_speaker_button_mutes(window) -> None:
+    await window.conn.connect(HUB)
+    assert window.sound_on
+    window.sound_button.click()
+    assert not window.sound_on
+    assert "muted" in window.sound_button.toolTip()
+    window.beep("mode")
+    assert window._beep_task is None  # nothing uploaded
+    window.fakes.program_output[:] = [SCAN_OUTPUT]
+    await window.scan_ports()
+    assert window.fakes.hub.ran[-1].endswith("scan_ports_quiet.py")
+    window.fakes.hub.status_observable.on_next(StatusFlag(0))
+    window.fakes.program_output[:] = [LF_OUTPUT]
+    assert await window.run_program("line_follower")
+    program = Path(window.fakes.hub.ran[-1])
+    assert "SOUND = False" in program.read_text(encoding="utf-8")

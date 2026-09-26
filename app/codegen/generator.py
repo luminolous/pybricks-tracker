@@ -75,10 +75,11 @@ def _environment() -> Environment:
     )
 
 
-def render(config: RobotConfig, mode: str, drift: str | None = None) -> str:
+def render(config: RobotConfig, mode: str, drift: str | None = None, sound: bool = True) -> str:
     """Render the hub program for `mode` as MicroPython source text.
 
     `drift` picks the test for mode "drift_test" (a key of DRIFT_TESTS).
+    `sound` False mutes every hub beep in the program (the speaker button).
     """
     if mode not in MODES:
         raise GeneratorError(f"Unknown program mode {mode!r}.")
@@ -120,6 +121,7 @@ def render(config: RobotConfig, mode: str, drift: str | None = None) -> str:
         "drift": drift_test,
         "distance_every": DISTANCE_EVERY_LOOPS,
         "run_tones": TONES["run"],
+        "sound": sound,
         "beep_max_ms": MAX_BEEP_MS,
         "max_speed": MAX_SPEED_MM_S,
         "max_turn": MAX_TURN_DEG_S,
@@ -128,10 +130,14 @@ def render(config: RobotConfig, mode: str, drift: str | None = None) -> str:
 
 
 def generate(
-    config: RobotConfig, mode: str, out_dir: Path = BUILD_DIR, drift: str | None = None
+    config: RobotConfig,
+    mode: str,
+    out_dir: Path = BUILD_DIR,
+    drift: str | None = None,
+    sound: bool = True,
 ) -> Path:
     """Render and write the program. The file is kept so hub line numbers can be traced."""
-    source = render(config, mode, drift=drift)
+    source = render(config, mode, drift=drift, sound=sound)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"hub_{mode}.py"
     path.write_text(source, encoding="utf-8")
@@ -143,4 +149,16 @@ def write_beep_program(name: str, out_dir: Path = BUILD_DIR) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"hub_beep_{name}.py"
     path.write_text(beep_program(name), encoding="utf-8")
+    return path
+
+
+def scan_program(sound: bool = True, out_dir: Path = BUILD_DIR) -> Path:
+    """scan_ports.py, or a copy without its start tone when the sound is off."""
+    if sound:
+        return SCAN_PORTS_PROGRAM
+    source = SCAN_PORTS_PROGRAM.read_text(encoding="utf-8")
+    quiet = [line for line in source.splitlines() if ".speaker.beep(" not in line]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / "scan_ports_quiet.py"
+    path.write_text("\n".join(quiet) + "\n", encoding="utf-8")
     return path

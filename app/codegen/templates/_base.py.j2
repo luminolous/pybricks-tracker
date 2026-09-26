@@ -26,6 +26,7 @@ BUMP_MM_S2 = 15000  # horizontal acceleration spike, ~1.5 g: likely a collision
 BUMP_COOLDOWN_MS = 500
 DISTANCE_EVERY = {{ distance_every }}
 BEEP_MAX_MS = {{ beep_max_ms }}  # BEEP blocks the loop while it plays
+SOUND = {{ "True" if sound else "False" }}  # the app's speaker button, fixed at Run
 
 # -- devices: only what the config assigns (an empty port raises OSError) --
 
@@ -169,6 +170,12 @@ def emit_s():
     )
 
 
+def beep(hz, ms):
+    # Every hub sound goes through here, so the speaker button mutes them all.
+    if SOUND:
+        hub.speaker.beep(hz, ms)
+
+
 def emit_e(kind, detail=None):
     if detail is None:
         print("E,{},{},{:.1f},{:.1f}".format(kind, clock.time(), _x, _y))
@@ -260,7 +267,7 @@ def check_commands():
                 reset_origin()
             elif key == "BEEP":
                 hz, ms = split_once(value)
-                hub.speaker.beep(int(hz), max(0, min(BEEP_MAX_MS, int(ms))))
+                beep(int(hz), max(0, min(BEEP_MAX_MS, int(ms))))
             elif key == "DRV":
                 speed, turn = split_once(value)
                 DRV_SPEED = max(-DRV_MAX_SPEED, min(DRV_MAX_SPEED, float(speed)))
@@ -313,7 +320,7 @@ def main():
     global STATE, STEER
     print("R,{},{}".format(MODE, PROTO_VERSION))
 {% for hz, ms in run_tones %}
-    hub.speaker.beep({{ hz }}, {{ ms }})  # started (app/core/beeps.py, "run")
+    beep({{ hz }}, {{ ms }})  # started (app/core/beeps.py, "run")
 {% endfor %}
     refl = read_reflection()
     if wait_for_imu():

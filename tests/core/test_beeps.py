@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pybricksdev.compile import compile_file
 
-from app.codegen.generator import SCAN_PORTS_PROGRAM, render, write_beep_program
+from app.codegen.generator import SCAN_PORTS_PROGRAM, render, scan_program, write_beep_program
 from app.core.beeps import MAX_BEEP_MS, TONES, beep_commands, beep_program
 from app.core.config import RobotConfig
 from app.core.protocol import encode_beep
@@ -36,10 +36,23 @@ def test_programs_play_their_own_tones() -> None:
     ((hz, ms),) = TONES["run"]
     main = source[source.index("def main():") :]
     handshake = main.index('print("R,{},{}".format(MODE, PROTO_VERSION))')
-    assert main.index(f"hub.speaker.beep({hz}, {ms})") > handshake  # R first, then the tone
+    assert main.index(f"beep({hz}, {ms})") > handshake  # R first, then the tone
 
 
 def test_hub_takes_beep_commands_clamped() -> None:
     source = render(RobotConfig(), "calibrate")
     assert f"BEEP_MAX_MS = {MAX_BEEP_MS}" in source
-    assert "hub.speaker.beep(int(hz), max(0, min(BEEP_MAX_MS, int(ms))))" in source
+    assert "beep(int(hz), max(0, min(BEEP_MAX_MS, int(ms))))" in source
+
+
+def test_speaker_button_mutes_every_hub_sound(tmp_path: Path) -> None:
+    for mode in ("line_follower", "calibrate", "teleop"):
+        loud = render(RobotConfig(), mode)
+        quiet = render(RobotConfig(), mode, sound=False)
+        assert "SOUND = True" in loud and "SOUND = False" in quiet
+        # the only speaker call sits inside beep(), which checks SOUND
+        assert quiet.count("hub.speaker.beep(") == 1
+        assert "    if SOUND:\n        hub.speaker.beep(hz, ms)" in quiet
+    assert scan_program(True) == SCAN_PORTS_PROGRAM
+    quiet_scan = scan_program(False, out_dir=tmp_path).read_text(encoding="utf-8")
+    assert ".speaker.beep(" not in quiet_scan and 'print("P,DONE,0")' in quiet_scan
