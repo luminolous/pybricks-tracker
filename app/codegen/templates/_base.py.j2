@@ -25,6 +25,7 @@ IMU_WAIT_S_MS = 500
 BUMP_MM_S2 = 15000  # horizontal acceleration spike, ~1.5 g: likely a collision
 BUMP_COOLDOWN_MS = 500
 DISTANCE_EVERY = {{ distance_every }}
+BEEP_MAX_MS = {{ beep_max_ms }}  # BEEP blocks the loop while it plays
 
 # -- devices: only what the config assigns (an empty port raises OSError) --
 
@@ -52,6 +53,7 @@ distance_sensor = UltrasonicSensor(Port.{{ distance.port }})
 # -- tuning, changed live by commands --
 
 KP = {{ tuning.kp }}
+KI = {{ tuning.ki }}
 KD = {{ tuning.kd }}
 BASE_SPEED = {{ tuning.base_speed_mm_s }}
 OBSTACLE_MM = {{ tuning.obstacle_threshold_mm }}
@@ -214,7 +216,7 @@ def split_once(text):
 
 
 def check_commands():
-    global KP, KD, BASE_SPEED, OBSTACLE_MM, INNER_PCT, SEARCH_RATE, FINISH_MM
+    global KP, KI, KD, BASE_SPEED, OBSTACLE_MM, INNER_PCT, SEARCH_RATE, FINISH_MM
     global STOPPED, PAUSED, DRV_SPEED, DRV_TURN
     while _poll.poll(0):
         line = usys.stdin.readline().strip()
@@ -226,6 +228,9 @@ def check_commands():
             if key == "KP":
                 KP = float(value)
                 emit_e("ACK", "KP:{}".format(KP))
+            elif key == "KI":
+                KI = float(value)
+                emit_e("ACK", "KI:{}".format(KI))
             elif key == "KD":
                 KD = float(value)
                 emit_e("ACK", "KD:{}".format(KD))
@@ -253,6 +258,9 @@ def check_commands():
                     PAUSED = False
             elif key == "ORG":
                 reset_origin()
+            elif key == "BEEP":
+                hz, ms = split_once(value)
+                hub.speaker.beep(int(hz), max(0, min(BEEP_MAX_MS, int(ms))))
             elif key == "DRV":
                 speed, turn = split_once(value)
                 DRV_SPEED = max(-DRV_MAX_SPEED, min(DRV_MAX_SPEED, float(speed)))
@@ -304,6 +312,9 @@ def wait_for_imu():
 def main():
     global STATE, STEER
     print("R,{},{}".format(MODE, PROTO_VERSION))
+{% for hz, ms in run_tones %}
+    hub.speaker.beep({{ hz }}, {{ ms }})  # started (app/core/beeps.py, "run")
+{% endfor %}
     refl = read_reflection()
     if wait_for_imu():
         reset_origin()

@@ -51,6 +51,11 @@ SETTLE_DEG = 20  # switch to the next turn's edge once this close to the new hea
 WALL_TURN_DEG = 90  # fallback turn on the spot when a wall blocks a pending turn
 
 _last_error = 0
+# KI term: error-seconds summed only in the grey edge band. It restarts on every
+# full turn, search, wall or obstacle, where the error is large for reasons the
+# integral must not learn from (windup), and is capped at INTEGRAL_MAX.
+_integral = 0.0
+INTEGRAL_MAX = 50
 _white_timer = StopWatch()
 _white_from = 0  # robot.distance() when the sensor last left the line
 _search = 0  # 0 following, 1 first sweep, 2 return sweep
@@ -109,6 +114,11 @@ def correction_dir(error):
     return edge_flip() if KP * error > 0 else -edge_flip()
 
 
+def reset_integral():
+    global _integral
+    _integral = 0.0
+
+
 def on_line():
     # The sensor sees the line (or its edge): restart the lost clocks.
     global _white_from
@@ -154,6 +164,7 @@ def start_search(error):
     global STATE, STEER, _search, _search_dir, _sweep_start
     _search_dir = correction_dir(error)
     _search = 1
+    reset_integral()
     _sweep_start = robot.angle()
     STATE = "SEARCH"
     STEER = 0
@@ -190,7 +201,7 @@ def search_step(refl):
 
 
 def control_step(n, refl):
-    global STATE, STEER, _last_error, _obstacle, _search, _wall_turn, _wall_armed
+    global STATE, STEER, _last_error, _obstacle, _search, _wall_turn, _wall_armed, _integral
     if _wall_turn:
         if not robot.done():
             return
@@ -203,6 +214,7 @@ def control_step(n, refl):
     if _distance_mm >= OBSTACLE_MM:
         _wall_armed = True
     elif _wall_armed:
+        reset_integral()
         if not _obstacle:
             _obstacle = True
             emit_e("OBS", _distance_mm)
@@ -244,8 +256,10 @@ def control_step(n, refl):
         STEER = correction_dir(error) * arc_turn(INNER_PCT / 100)
         STATE = "PIVOT"
         light(Color.RED if refl < BLACK_BELOW else Color.GREEN)
+        reset_integral()
     else:
-        STEER = edge_flip() * (KP * error + KD * (error - _last_error))
+        _integral = max(-INTEGRAL_MAX, min(INTEGRAL_MAX, _integral + error * LOOP_MS / 1000))
+        STEER = edge_flip() * (KP * error + KI * _integral + KD * (error - _last_error))
         limit = arc_turn(INNER_PCT / 100)  # never sharper than the turn on black
         STEER = max(-limit, min(limit, STEER))
         STATE = "FOLLOW"

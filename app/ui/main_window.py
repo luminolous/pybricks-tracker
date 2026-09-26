@@ -35,7 +35,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.codegen.generator import LOOP_MS, SCAN_PORTS_PROGRAM, GeneratorError, generate
+from app.codegen.generator import (
+    LOOP_MS,
+    SCAN_PORTS_PROGRAM,
+    GeneratorError,
+    generate,
+    write_beep_program,
+)
+from app.core.beeps import beep_commands
 from app.core.config import (
     CONFIGS_DIR,
     IDLE_PROFILE,
@@ -90,6 +97,7 @@ CONSOLE_PX = 112
 LEFT_COL_PX = 296  # mockup had 252; port rows need device + role + direction side by side
 RIGHT_COL_PX = 340
 SCAN_TIMEOUT_S = 10.0
+BEEP_PROGRAM_TIMEOUT_S = 3.0  # upload + a few tones; the next upload waits this long at most
 HANDSHAKE_TIMEOUT_S = 5.0  # upload done -> R line; longer means the program crashed
 DRAIN_GRACE_S = 0.3  # let queued stdout lines land after a program ends
 READOUT_REFRESH_MS = 33  # ~30 fps; widgets never redraw per incoming line
@@ -172,6 +180,8 @@ def _action_button(text: str, key: str, role: str | None = None) -> QPushButton:
 
 
 class MainWindow(QMainWindow):
+    HUB_BEEPS = True  # tests turn it off: a beep upload would eat fake program output
+
     def __init__(
         self,
         connection_factory: ConnectionFactory = HubConnection,
@@ -199,6 +209,7 @@ class MainWindow(QMainWindow):
         self.scan = PortScan()
         self._scan_done = asyncio.Event()
         self._tasks: set[asyncio.Task] = set()
+        self._beep_task: asyncio.Task | None = None
         self._drain_task: asyncio.Task | None = None
         self._heartbeat_task: asyncio.Task | None = None
         self._rx_count = 0
@@ -496,6 +507,7 @@ class MainWindow(QMainWindow):
 
         self.tuning = TuningPanel()
         self.tuning.changed.connect(self._tuning_changed)
+        self.tuning.group_clicked.connect(lambda _group: self.beep("mode"))
         layout.addWidget(self.tuning)
 
         self.event_list = EventList()
@@ -582,6 +594,7 @@ class MainWindow(QMainWindow):
         if not self.conn.connected:
             self.note("Connect to a hub before scanning.")
             return False
+        await self._beep_done()
         self.scan.reset()
         self._scan_done.clear()
         self.port_panel.set_scanning()
@@ -612,6 +625,7 @@ class MainWindow(QMainWindow):
 
     async def run_program(self, mode: str = "line_follower", drift: str | None = None) -> bool:
         """Render, upload and start `mode`, then wait for its R handshake."""
+        await self._beep_done()
         blocker = self.run_blocker()
         if blocker:
             self.note(blocker)
@@ -719,6 +733,7 @@ class MainWindow(QMainWindow):
                 current=lambda: self._base_config.calibration,
                 apply=self.apply_calibration,
                 parent=self,
+                sampled=self.beep,
             )
         self._calibration_dialog.show()
         self._calibration_dialog.raise_()
@@ -1236,9 +1251,53 @@ class MainWindow(QMainWindow):
         if self.conn.link_state is not LinkState.DISCONNECTED:
             self._spawn(self.conn.disconnect())
             return
-        self._dialog = ConnectDialog(self.conn.scan, self.conn.connect, self)
+        self._dialog = ConnectDialog(self.conn.scan, self._connect_and_beep, self)
         self._dialog.open()
         self._spawn(self._dialog.run_scan())
+
+    async def _connect_and_beep(self, hub) -> None:
+        await self.conn.connect(hub)
+        self.beep("connect")
+
+    # -- beeps (app/core/beeps.py): always from the hub speaker ------------------
+
+    def beep(self, name: str) -> None:
+        """Play tone `name` on the hub, however the hub is busy. Silent without a hub."""
+        if not self.HUB_BEEPS or not self.conn.connected:
+            return
+        if self.conn.program_running:
+            ours = self._current_mode is not None and self._ready is not None
+            if ours and self._ready.compatible:  # a mode program: it takes BEEP
+                self._spawn(self._send_beep(name))
+            return  # someone else's program, or the scan: stay quiet
+        if self._beep_task is None or self._beep_task.done():
+            self._beep_task = asyncio.ensure_future(self._play_beep_program(name))
+
+    async def _send_beep(self, name: str) -> None:
+        for line in beep_commands(name):
+            try:
+                await self.conn.write_line(line)
+            except HubConnectionError as exc:
+                logger.warning("Beep failed: %s", exc)
+                return
+
+    async def _play_beep_program(self, name: str) -> None:
+        """Upload the beep-and-end program and wait until it has ended."""
+        try:
+            await self.conn.run_file(write_beep_program(name))
+        except HubConnectionError as exc:
+            logger.warning("Beep program failed: %s", exc)
+            return
+        deadline = self._clock() + BEEP_PROGRAM_TIMEOUT_S
+        while self.conn.program_running and self._clock() < deadline:
+            await asyncio.sleep(0.05)
+
+    async def _beep_done(self) -> None:
+        """Let a beep program finish before the next upload: the hub runs one at a time."""
+        task = self._beep_task
+        if task is not None and not task.done():
+            with contextlib.suppress(TimeoutError, asyncio.CancelledError):
+                await asyncio.wait_for(asyncio.shield(task), BEEP_PROGRAM_TIMEOUT_S)
 
     def _scan_clicked(self) -> None:
         if self.scan_button.isEnabled():

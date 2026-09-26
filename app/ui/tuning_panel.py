@@ -1,7 +1,7 @@
 """Tuning knobs: slider plus exact-entry field, and the value the hub acknowledged.
 
 Each program shows only the knobs it uses (its group):
-- line: KP, KD, SPD, INNER (inner wheel % on black), SRCH (search), THR (wall distance), FIN
+- line: KP, KI, KD, SPD, INNER (inner wheel % on black), SRCH (search), THR (wall distance), FIN
   (route end to finish), sent live and acknowledged; plus the route, a row of
   L/R turn buttons rendered into the program at Run
 - teleop: SPD, TURN, applied in the app (every DRV carries them)
@@ -60,6 +60,7 @@ SPD_MAX = float(MAX_SPEED_MM_S)
 TRN_MAX = float(MAX_TURN_DEG_S)
 KNOBS = (
     Knob("kp", "KP", -10.0, 10.0, 0.05, 2),
+    Knob("ki", "KI", -5.0, 5.0, 0.05, 2),
     Knob("kd", "KD", -20.0, 20.0, 0.1, 2),
     Knob("base_speed_mm_s", "SPD", 0.0, SPD_MAX, 5.0, 0, " mm/s", frozenset({"line", "teleop"})),
     Knob("inner_pct", "INNER", 0.0, 100.0, 5.0, 0, " %"),
@@ -254,6 +255,7 @@ class TuningPanel(QFrame):
 
     changed = Signal(str, float)
     route_changed = Signal(str)
+    group_clicked = Signal(str)  # a group button pressed by the user, not set_group()
 
     def __init__(self) -> None:
         super().__init__()
@@ -271,7 +273,7 @@ class TuningPanel(QFrame):
             button.setProperty("role", "small")
             button.setCheckable(True)
             button.setToolTip(f"Show the {title.lower()} knobs")
-            button.clicked.connect(lambda _=False, g=group: self.set_group(g))
+            button.clicked.connect(lambda _=False, g=group: self._group_button(g))
             self._group_box.addButton(button)
             self.group_buttons[group] = button
             head.addWidget(button)
@@ -322,6 +324,10 @@ class TuningPanel(QFrame):
         self.group = group
         self.group_buttons[group].setChecked(True)
         self._refresh()
+
+    def _group_button(self, group: str) -> None:
+        self.set_group(group)
+        self.group_clicked.emit(group)
 
     def set_mode(self, mode: str) -> None:
         self.mode = mode

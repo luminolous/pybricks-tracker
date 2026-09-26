@@ -20,6 +20,9 @@ Known deviations in the Qt build:
   Drift` buttons (small role, checked = accent) next to the caption. The line
   group ends with a route row of small mono chips (`chip` role): taken = accent
   fill, next = accent outline.
+- Map ruler (not in the mockup): a small `role="small"` icon button pinned
+  top-left of the plot, checked = accent. Measurement: dashed accent line,
+  hollow end points, mono label on a surface-coloured box beside the midpoint.
 - Device names are shortened in the port table (`Motor`, `Ultrasonic`); the
   full name is the tooltip.
 

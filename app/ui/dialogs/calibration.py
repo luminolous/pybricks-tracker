@@ -29,6 +29,7 @@ class CalibrationDialog(QDialog):
         current: Callable[[], SensorCalibration],
         apply: Callable[[SensorCalibration], None],
         parent=None,
+        sampled: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Sensor calibration")
@@ -38,6 +39,7 @@ class CalibrationDialog(QDialog):
         self._samples = samples
         self._current = current
         self._apply = apply
+        self._sampled = sampled  # "black" or "white", after a good sample
         self.black: int | None = None
         self.white: int | None = None
         self.result: SensorCalibration | None = None
@@ -124,6 +126,8 @@ class CalibrationDialog(QDialog):
         setattr(self, which, value)
         (self.black_value if which == "black" else self.white_value).setText(str(value))
         self._evaluate()
+        if self._sampled is not None:
+            self._sampled(which)
         return value
 
     def save(self) -> None:

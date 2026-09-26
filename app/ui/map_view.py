@@ -1,5 +1,6 @@
 """Map: heading tape, trail (four colouring modes), robot marker, origin, event
-markers, and previous runs overlaid with their metrics. Units are mm, labelled
+markers, previous runs overlaid with their metrics, and a ruler (top-left
+button: click two points for distance, dx/dy and angle). Units are mm, labelled
 in cm.
 
 Frame (CLAUDE.md): x forward, y left, heading CCW from x, origin at run
@@ -10,12 +11,14 @@ Redraws come from the window's refresh timer, never per incoming line.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPaintEvent, QPen, QPolygonF
-from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPaintEvent, QPen, QPolygonF
+from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from app.core.analysis import RunMetrics, run_metrics
 from app.core.config import SensorCalibration
@@ -38,6 +41,8 @@ MARKER_HALF_WIDTH_MM = 25
 TAPE_PX_PER_DEG = 3.2
 TAPE_LABEL_CLEARANCE_PX = 40
 SWATCH_MARGIN_PX = 12
+RULER_MARGIN_PX = 10
+RULER_ICON = Path(__file__).resolve().parent / "icons" / "ruler.svg"
 LEGEND_MARGIN_PX = 12
 EVENT_SYMBOLS = {
     "LOST": "t",
@@ -51,6 +56,40 @@ EVENT_SYMBOLS = {
     "TURN": "p",
     "FINISH": "h",
 }
+
+
+@dataclass(frozen=True)
+class Measurement:
+    """Ruler result between two map points, in the map frame (mm, CCW degrees)."""
+
+    x0_mm: float
+    y0_mm: float
+    x1_mm: float
+    y1_mm: float
+
+    @property
+    def dx_mm(self) -> float:
+        return self.x1_mm - self.x0_mm
+
+    @property
+    def dy_mm(self) -> float:
+        return self.y1_mm - self.y0_mm
+
+    @property
+    def distance_mm(self) -> float:
+        return math.hypot(self.dx_mm, self.dy_mm)
+
+    @property
+    def angle_deg(self) -> float:
+        """From the +x axis, counter-clockwise, -180..180."""
+        return math.degrees(math.atan2(self.dy_mm, self.dx_mm))
+
+    def text(self) -> str:
+        return (
+            f"{self.distance_mm / 10:.1f} cm\n"
+            f"\u0394x {self.dx_mm / 10:.1f} \u00b7 \u0394y {self.dy_mm / 10:.1f} cm\n"
+            f"{self.angle_deg:.0f}\u00b0"
+        )
 
 
 def event_position(event: EventRecord, sensor_offset_mm: float) -> tuple[float, float]:
@@ -292,6 +331,29 @@ class MapView(QWidget):
         self._set_default_range()
         self.plot.getViewBox().sigRangeChangedManually.connect(self._manual_range)
 
+        # Ruler: one measurement at a time; a third click starts the next one.
+        self.ruler_line = pg.PlotDataItem(
+            pen=pg.mkPen(theme.ACCENT, width=1.5, style=Qt.PenStyle.DashLine),
+            symbol="o",
+            symbolSize=7,
+            symbolPen=pg.mkPen(theme.ACCENT),
+            symbolBrush=pg.mkBrush(theme.SUNKEN),
+        )
+        self.ruler_label = pg.TextItem(
+            color=theme.TEXT,
+            anchor=(0, 1),
+            fill=pg.mkBrush(theme.SURFACE),
+            border=pg.mkPen(theme.LINE_STRONG),
+        )
+        self.ruler_label.setFont(_mono(11))
+        for graphic in (self.ruler_line, self.ruler_label):
+            graphic.setZValue(10)  # above trail, markers and overlays
+            self.plot.addItem(graphic)
+        self.ruler_label.hide()
+        self.measurement: Measurement | None = None
+        self._ruler_start: tuple[float, float] | None = None
+        self.plot.scene().sigMouseClicked.connect(self._scene_clicked)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -303,11 +365,65 @@ class MapView(QWidget):
         self.swatch.hide()
         self.legend = MapLegend(self.plot)
         self.legend.hide()
+        self.ruler_button = QPushButton(self.plot)
+        self.ruler_button.setIcon(QIcon(str(RULER_ICON)))
+        self.ruler_button.setProperty("role", "small")
+        self.ruler_button.setCheckable(True)
+        self.ruler_button.setFixedSize(30, 28)
+        self.ruler_button.setToolTip(
+            "Ruler: click two points to measure. Click again for a new measurement; "
+            "click this button to put the ruler away."
+        )
+        self.ruler_button.toggled.connect(self.set_ruler)
+
+    @property
+    def ruler_active(self) -> bool:
+        return self.ruler_button.isChecked()
+
+    def set_ruler(self, on: bool) -> None:
+        if self.ruler_button.isChecked() != on:
+            self.ruler_button.setChecked(on)  # toggled calls back here
+            return
+        self.plot.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
+        self._ruler_start = None  # on or off, start from a clean ruler
+        self.measurement = None
+        self.ruler_line.setData([], [])
+        self.ruler_label.hide()
+
+    def ruler_click(self, x_mm: float, y_mm: float) -> None:
+        """First point, then second point; a click after a measurement starts anew."""
+        if self._ruler_start is None or self.measurement is not None:
+            self._ruler_start = (x_mm, y_mm)
+            self.measurement = None
+            self.ruler_line.setData([x_mm], [y_mm])
+            self.ruler_label.hide()
+            return
+        x0, y0 = self._ruler_start
+        self.measurement = Measurement(x0, y0, x_mm, y_mm)
+        self.ruler_line.setData([x0, x_mm], [y0, y_mm])
+        self.ruler_label.setText(self.measurement.text())
+        # right of the midpoint, on the side the line does not run through
+        rising = self.measurement.dx_mm * self.measurement.dy_mm > 0
+        self.ruler_label.setAnchor((0, 0) if rising else (0, 1))
+        self.ruler_label.setPos((x0 + x_mm) / 2, (y0 + y_mm) / 2)
+        self.ruler_label.show()
+
+    def _scene_clicked(self, ev) -> None:
+        if not self.ruler_active or ev.button() != Qt.MouseButton.LeftButton:
+            return
+        vb = self.plot.getViewBox()
+        if not vb.sceneBoundingRect().contains(ev.scenePos()):
+            return  # on an axis, not the map
+        point = vb.mapSceneToView(ev.scenePos())
+        self.ruler_click(point.x(), point.y())
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._place_swatch()
         self._place_legend()
+        self.ruler_button.move(
+            self.plot.getPlotItem().getAxis("left").width() + RULER_MARGIN_PX, RULER_MARGIN_PX
+        )
 
     def _place_legend(self) -> None:
         self.legend.adjustSize()
@@ -477,11 +593,12 @@ class MapView(QWidget):
             self.select_event(None)
 
     def _event_clicked(self, _item, points, _ev=None) -> None:
+        if self.ruler_active:
+            return  # measuring: a click on a marker is a ruler point
         if len(points):
             event = points[0].data()
             self.select_event(event)
             self.event_clicked.emit(event)
-        self._set_default_range()
 
     def _set_default_range(self) -> None:
         span = DEFAULT_HALF_SPAN_MM

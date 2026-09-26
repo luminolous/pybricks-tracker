@@ -82,3 +82,51 @@ def test_tape_paints_without_errors(qapp) -> None:
     tape.grab()
     tape.set_heading(-725.4)
     tape.grab()
+
+
+# -- ruler ----------------------------------------------------------------------
+
+
+def test_measurement_values() -> None:
+    from app.ui.map_view import Measurement
+
+    m = Measurement(100.0, 100.0, 400.0, 500.0)
+    assert (m.dx_mm, m.dy_mm, m.distance_mm) == (300.0, 400.0, 500.0)
+    assert round(m.angle_deg, 1) == 53.1
+    assert m.text() == "50.0 cm\nΔx 30.0 · Δy 40.0 cm\n53°"
+    assert round(Measurement(0, 0, -100, 0).angle_deg) == 180
+
+
+def test_ruler_two_clicks_then_restart(qapp) -> None:
+    from app.ui.map_view import MapView
+
+    view = MapView()
+    view.ruler_click(0, 0)  # ignored by the scene handler while off; direct call still works
+    view.set_ruler(True)
+    assert view.ruler_button.isChecked()
+    view.ruler_click(0, 0)
+    assert view.measurement is None and view.ruler_label.isVisible() is False
+    view.ruler_click(0, 200)
+    assert view.measurement.distance_mm == 200
+    assert "20.0 cm" in view.ruler_label.toPlainText()
+    view.ruler_click(50, 50)  # third click: a new first point
+    assert view.measurement is None
+    view.set_ruler(False)
+    assert view.measurement is None
+    assert len(view.ruler_line.getData()[0] or []) == 0
+
+
+def test_event_markers_do_not_select_while_measuring(qapp) -> None:
+    from app.core.state import EventRecord
+    from app.ui.map_view import MapView
+
+    view = MapView()
+    picked = []
+    view.event_clicked.connect(picked.append)
+    view._draw_events([EventRecord("LOST", 0, 10.0, 10.0, 0.0)])
+    view.set_ruler(True)
+    view._event_clicked(None, view.events.points())
+    assert picked == []
+    view.set_ruler(False)
+    view._event_clicked(None, view.events.points())
+    assert len(picked) == 1

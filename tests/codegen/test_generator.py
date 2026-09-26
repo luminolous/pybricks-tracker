@@ -289,7 +289,7 @@ def test_pivot_and_search_rates_are_live(source: str) -> None:
     assert 'emit_e("ACK", "INNER:{}".format(INNER_PCT))' in commands
     assert "SEARCH_RATE = max(0.0, min(DRV_MAX_TURN, float(value)))" in commands
     assert 'emit_e("ACK", "SRCH:{}".format(SEARCH_RATE))' in commands
-    assert "global KP, KD, BASE_SPEED, OBSTACLE_MM, INNER_PCT, SEARCH_RATE" in commands
+    assert "global KP, KI, KD, BASE_SPEED, OBSTACLE_MM, INNER_PCT, SEARCH_RATE" in commands
     assert "STEER = _search_dir * SEARCH_RATE" in function(source, "search_step")
 
 
@@ -445,7 +445,10 @@ def test_edge_follows_the_next_turn(source: str) -> None:
     assert "tuned = 1 if KP < 0 else -1" in flip  # negative KP tracks the right edge
     assert "return tuned * turn_sign(ROUTE[min(_side_step, len(ROUTE) - 1)])" in flip
     control = function(source, "control_step")
-    assert "STEER = edge_flip() * (KP * error + KD * (error - _last_error))" in control
+    assert (
+        "STEER = edge_flip() * (KP * error + KI * _integral + KD * (error - _last_error))"
+        in control
+    )
 
 
 def test_turns_are_counted_by_gyro_heading(source: str) -> None:
@@ -486,3 +489,18 @@ def test_fin_command_is_live_and_acknowledged(source: str) -> None:
     commands = function(source, "check_commands")
     assert "FINISH_MM = max(0.0, float(value))" in commands
     assert 'emit_e("ACK", "FIN:{}".format(FINISH_MM))' in commands
+
+
+def test_ki_runs_only_in_the_grey_band_with_anti_windup(source: str) -> None:
+    assert re.search(r"^KI = 0.0$", source, re.MULTILINE)  # off by default
+    control = function(source, "control_step")
+    assert "KP * error + KI * _integral + KD * (error - _last_error)" in control
+    assert (
+        "_integral = max(-INTEGRAL_MAX, min(INTEGRAL_MAX, _integral + error * LOOP_MS / 1000))"
+        in control
+    )
+    # restarts on full turns, searches and walls
+    assert control.count("reset_integral()") >= 2
+    assert "reset_integral()" in function(source, "start_search")
+    commands = function(source, "check_commands")
+    assert 'emit_e("ACK", "KI:{}".format(KI))' in commands

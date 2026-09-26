@@ -131,7 +131,7 @@ class Status:
 EVENT_KINDS = frozenset(
     {"LOST", "FOUND", "GIVEUP", "OBS", "STALL", "BUMP", "LAP", "WDOG", "TURN", "FINISH", "ACK"}
 )
-TUNING_KEYS = ("KP", "KD", "SPD", "INNER", "SRCH", "THR", "FIN")
+TUNING_KEYS = ("KP", "KI", "KD", "SPD", "INNER", "SRCH", "THR", "FIN")
 
 
 def parse_ack(detail: str | None) -> tuple[str, float] | None:
@@ -236,7 +236,7 @@ def _decode_event(fields: list[str]) -> Event | None:
 
 
 COMMAND_KEYS = frozenset(
-    {"KP", "KD", "SPD", "INNER", "SRCH", "THR", "FIN", "MODE", "HB", "ORG", "DRV"}
+    {"KP", "KI", "KD", "SPD", "INNER", "SRCH", "THR", "FIN", "MODE", "HB", "ORG", "DRV", "BEEP"}
 )
 MODE_VALUES = frozenset({"STOP", "PAUSE", "RESUME"})
 
@@ -252,6 +252,11 @@ def encode_command(key: str, value: float | int | str | None = None) -> str:
     if isinstance(value, float):
         value = f"{value:.4f}".rstrip("0").rstrip(".")
     return f"{key},{value}"
+
+
+def encode_beep(hz: int, ms: int) -> str:
+    """`BEEP,<hz>,<ms>`: a tone on the hub speaker."""
+    return f"BEEP,{int(hz)},{int(ms)}"
 
 
 def encode_drive(speed_mm_s: float, turn_deg_s: float) -> str:

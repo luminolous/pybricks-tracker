@@ -125,6 +125,8 @@ def test_encode_commands() -> None:
     assert encode_command("KP", -1.8) == "KP,-1.8"
     assert encode_command("SPD", 70.0) == "SPD,70"
     assert encode_command("INNER", 20.0) == "INNER,20"
+    assert encode_command("KI", -0.5) == "KI,-0.5"
+    assert parse_ack("KI:-0.5") == ("KI", -0.5)
     assert encode_command("SRCH", 150.0) == "SRCH,150"
     assert encode_command("THR", 50) == "THR,50"
     assert encode_command("MODE", "STOP") == "MODE,STOP"

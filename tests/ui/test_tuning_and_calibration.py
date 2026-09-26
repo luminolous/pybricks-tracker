@@ -70,6 +70,7 @@ def test_set_values_is_silent(qapp) -> None:
     assert seen == []
     assert panel.values() == {
         "kp": -3.0,
+        "ki": 0.0,
         "kd": -6.0,
         "base_speed_mm_s": 120,
         "inner_pct": 20,
@@ -92,7 +93,7 @@ def test_modes_enable_and_hint(qapp) -> None:
 
     panel.set_mode("config")
     groups = {
-        "line": {"KP", "KD", "SPD", "INNER", "SRCH", "THR", "FIN"},
+        "line": {"KP", "KI", "KD", "SPD", "INNER", "SRCH", "THR", "FIN"},
         "teleop": {"SPD", "TURN"},
         "drift": {"DSPD", "DTRN"},
     }

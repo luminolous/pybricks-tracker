@@ -4,12 +4,14 @@
 #
 # No watchdog: this program constructs no motors and never drives.
 
+from pybricks.hubs import InventorHub
 from pybricks.iodevices import PUPDevice
 from pybricks.parameters import Port
 
 PROTO_VERSION = 1
 
 print("R,SCAN,{}".format(PROTO_VERSION))
+InventorHub().speaker.beep(880, 80)  # scan tone (app/core/beeps.py, "scan")
 
 for name, port in (
     ("A", Port.A),

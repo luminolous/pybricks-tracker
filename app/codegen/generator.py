@@ -12,6 +12,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from app.core.analysis import DRIFT_TESTS
+from app.core.beeps import MAX_BEEP_MS, TONES, beep_program
 from app.core.config import (
     MAX_SPEED_MM_S,
     MAX_TURN_DEG_S,
@@ -118,6 +119,8 @@ def render(config: RobotConfig, mode: str, drift: str | None = None) -> str:
         "use_gyro": drift_test.use_gyro if drift_test else mode not in NO_GYRO_MODES,
         "drift": drift_test,
         "distance_every": DISTANCE_EVERY_LOOPS,
+        "run_tones": TONES["run"],
+        "beep_max_ms": MAX_BEEP_MS,
         "max_speed": MAX_SPEED_MM_S,
         "max_turn": MAX_TURN_DEG_S,
     }
@@ -132,4 +135,12 @@ def generate(
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"hub_{mode}.py"
     path.write_text(source, encoding="utf-8")
+    return path
+
+
+def write_beep_program(name: str, out_dir: Path = BUILD_DIR) -> Path:
+    """Write the beep-and-end program for tone `name` (app/core/beeps.py)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"hub_beep_{name}.py"
+    path.write_text(beep_program(name), encoding="utf-8")
     return path

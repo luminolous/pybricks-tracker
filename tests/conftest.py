@@ -21,3 +21,9 @@ def isolated_sessions(tmp_path, monkeypatch):
     target = tmp_path / "sessions"
     monkeypatch.setattr("app.core.recorder.SESSIONS_DIR", target)
     return target
+
+
+@pytest.fixture(autouse=True)
+def quiet_hub(monkeypatch):
+    """No beep uploads in tests: they would consume the fake hub's program output."""
+    monkeypatch.setattr("app.ui.main_window.MainWindow.HUB_BEEPS", False)
