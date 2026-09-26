@@ -72,9 +72,17 @@ TURN_DONE_DEG = 60  # heading change that counts as a planned turn taken
 # and the wall turn aimed 10 degrees off. The segment heading is learnt while
 # the robot follows a line steadily (ANCHOR_RATE per loop), and the ideal
 # heading after a turn is only the first guess.
+# Learning must not follow a turn: a natural corner turns slowly (~20 deg/s),
+# and a 100 ms steady test let the heading drag the segment heading along, so
+# the turn never reached TURN_DONE_DEG and was never counted; the wall fallback
+# then turned the old step's way at the next wall (2026-09-26). Steady is now a
+# net change over 500 ms (the edge wobble cancels out, a turn does not), and the
+# learnt heading stays within ANCHOR_MAX_DEG of the step's first guess.
 SETTLE_DEG = 30  # on the new line: this close to the segment heading ...
-STEADY_DEG = 6  # ... and turning less than this per 100 ms (straights swing ~5)
+STEADY_MS = 500  # ... and steady: net heading change over this window ...
+STEADY_DEG = 5  # ... below this
 ANCHOR_RATE = 0.01  # per loop: ~1 s to learn the real line heading
+ANCHOR_MAX_DEG = 15  # learnt heading within this of the step's first guess
 ARM_MM = 100  # S arms after following the new line this far: the heading is learnt
 # Wall fallback: turn on the spot to the planned heading, measured by the gyro,
 # not by robot.turn(): with a wrong axle track, turn(90) did 64 degrees and left
@@ -123,7 +131,8 @@ _black_from = None  # S: robot.distance() where the current full-black stretch b
 _crossing = False  # S: on the crossing now; the step completes when it leaves it
 _s_clear = True  # S: the sensor has left black since the edge switch; only then look for a crossing
 _arm_from = 0  # S: robot.distance() at the last edge switch
-_h_ref = 0.0  # heading 100 ms ago, for the steady test
+_guess_heading = 0.0  # the step's first guess at its segment heading
+_h_ref = 0.0  # heading STEADY_MS ago, for the steady test
 _steady = False
 _steady_timer = StopWatch()
 
@@ -251,10 +260,11 @@ def on_line():
 
 
 def setup():
-    global STATE, _step_heading, _arm_from
+    global STATE, _step_heading, _arm_from, _guess_heading
     STATE = "FOLLOW"
     on_line()
     _step_heading = _heading_deg
+    _guess_heading = _heading_deg
     _arm_from = robot.distance()
 
 
@@ -263,15 +273,17 @@ def track_route(refl):
     # black. From black, the new edge's control carries the sensor across the
     # tape to the new side. Switching on white put the sensor on the wrong side:
     # the new edge's control then turned away from the line (2026-09-26).
-    global _side_step, _step_heading, _s_clear, _arm_from, _h_ref, _steady
-    if _steady_timer.time() >= 100:
+    global _side_step, _step_heading, _s_clear, _arm_from, _h_ref, _steady, _guess_heading
+    if _steady_timer.time() >= STEADY_MS:
         _steady = abs(_heading_deg - _h_ref) < STEADY_DEG
         _h_ref = _heading_deg
         _steady_timer.reset()
     near = abs(_heading_deg - _step_heading) < SETTLE_DEG
     if near and _steady and _side_step == _step:
-        # following this segment steadily: learn its real heading
-        _step_heading += ANCHOR_RATE * (_heading_deg - _step_heading)
+        # following this segment steadily: learn its real heading, near the guess
+        learnt = _step_heading + ANCHOR_RATE * (_heading_deg - _step_heading)
+        low = _guess_heading - ANCHOR_MAX_DEG
+        _step_heading = max(low, min(_guess_heading + ANCHOR_MAX_DEG, learnt))
     if _side_step < _step and near and _steady and refl < BLACK_BELOW:
         _side_step = _step
         _s_clear = False  # crossing the tape now is the switch, not a crossing
@@ -287,7 +299,8 @@ def track_route(refl):
     sign = turn_sign(ROUTE[_step])
     # the app frame is CCW-positive: a right turn lowers the heading
     if (_step_heading - _heading_deg) * sign >= TURN_DONE_DEG:
-        _step_heading -= sign * 90
+        _step_heading -= sign * 90  # keeps the learnt offset of the last segment
+        _guess_heading = _step_heading
         step_taken()
 
 

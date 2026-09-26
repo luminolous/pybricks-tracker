@@ -608,11 +608,16 @@ def test_full_turn_sharpens_while_the_sensor_stays_off_the_edge(source: str) -> 
 
 def test_segment_heading_is_learnt_from_the_gyro(source: str) -> None:
     track = function(source, "track_route")
-    # steady: heading moved less than STEADY_DEG in the last 100 ms
+    # steady: net heading change below STEADY_DEG over STEADY_MS (500)
+    assert "if _steady_timer.time() >= STEADY_MS:" in track
     assert "_steady = abs(_heading_deg - _h_ref) < STEADY_DEG" in track
-    # only while following this segment steadily, never mid-turn
+    assert "STEADY_MS = 500" in source and "STEADY_DEG = 5" in source
+    # only while following this segment steadily, and never far from the guess:
+    # a slow natural turn dragged it along and was never counted (2026-09-26)
     assert "if near and _steady and _side_step == _step:" in track
-    assert "_step_heading += ANCHOR_RATE * (_heading_deg - _step_heading)" in track
+    assert "learnt = _step_heading + ANCHOR_RATE * (_heading_deg - _step_heading)" in track
+    assert "_step_heading = max(low, min(_guess_heading + ANCHOR_MAX_DEG, learnt))" in track
+    assert "_guess_heading = _step_heading" in track
     assert "SETTLE_DEG = 30" in source and "ARM_MM = 100" in source
     armed = function(source, "straight_armed")
     assert "robot.distance() - _arm_from >= ARM_MM" in armed

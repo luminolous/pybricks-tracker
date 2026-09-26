@@ -351,3 +351,14 @@ line steadily (~1 s), and the ideal heading after a turn is only a first
 guess. The edge switch needs the heading within 30 degrees and steady (< 6
 degrees per 100 ms); S arms after 100 mm on the new line; the wall turn and
 turn counting use the learnt heading.
+
+Regression, same day (runs `20260926-1339..1343`): the robot turned LEFT at
+the green wall. The heading learning followed the slow natural L turn at the
+yellow junction (~20 deg/s passed the 100 ms steady test), the segment heading
+trailed ~20 degrees behind, and the turn never reached 60 degrees, so it was
+never counted. At the green wall the fallback then turned the step still
+pending: L. Run 1341 missed the R the same way and turned at the crossing.
+Fix: steady is a net change under 5 degrees over 500 ms, and the learnt
+heading stays within 15 degrees of the step's first guess. Replaying the
+recorded headings through the new rule counts the L in 1343 (19.0 s, before
+the green wall) and the L and R in 1341.
