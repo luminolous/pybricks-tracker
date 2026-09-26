@@ -409,7 +409,12 @@ def all_hub_sources() -> list[tuple[str, str]]:
     return out
 
 
-@pytest.mark.parametrize(("name", "text"), all_hub_sources())
+# ids: the name only. The default id holds the whole program, which grew past
+# the 32767-character limit of Windows environment variables (PYTEST_CURRENT_TEST).
+_SOURCES = all_hub_sources()
+
+
+@pytest.mark.parametrize(("name", "text"), _SOURCES, ids=[name for name, _ in _SOURCES])
 def test_no_str_methods_missing_on_the_hub(name: str, text: str) -> None:
     code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())  # skip comments
     used = [m for m in MISSING_STR_METHODS if re.search(rf"\.{m}\(", code)]
@@ -551,11 +556,11 @@ def test_straight_step_locks_heading_across_a_crossing() -> None:
     assert "if off >= LOCK_DEG and steer < 0:" in lock
     assert "if off <= -LOCK_DEG and steer > 0:" in lock
     control = function(source, "control_step")
-    assert "if straight_armed():\n        STEER = lock_heading(STEER)" in control
+    assert "if straight_armed() or robot.distance() < _lock_until:" in control
     # the crossing: CROSS_MM of full black, taken once the sensor leaves it
     cross = function(source, "track_straight")
     assert "robot.distance() - _black_from >= CROSS_MM" in cross
-    assert "if _crossing:\n        _crossing = False\n        step_taken()" in cross
+    assert "if _crossing:\n        _crossing = False" in cross and "step_taken()" in cross
     track = function(source, "track_route")
     assert "if straight_armed():\n            track_straight(refl)" in track
 
@@ -641,3 +646,13 @@ def test_steady_is_earned_again_after_a_wall_turn_or_search(source: str) -> None
     assert "_wall_turn = False" in control
     after = control[control.index("_wall_turn = False") :]
     assert after.index("reset_steady()") < after.index("track_route(refl)")
+
+
+def test_back_to_kp_edge_after_the_route_and_lock_past_the_crossing(source: str) -> None:
+    side = function(source, "side_of")
+    assert "if i >= len(ROUTE):\n        return None" in side  # KP's own edge again
+    cross = function(source, "track_straight")
+    assert "_lock_until = robot.distance() + LOCK_AFTER_MM" in cross
+    assert "LOCK_AFTER_MM = 60" in source
+    control = function(source, "control_step")
+    assert "if straight_armed() or robot.distance() < _lock_until:" in control

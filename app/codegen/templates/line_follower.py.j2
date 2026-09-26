@@ -105,6 +105,10 @@ WALL_TURN_MS = 3000  # give up turning after this (wheels blocked)
 WALL_SEARCH_FIRST_DEG = 90
 WALL_SEARCH_BACK_DEG = 45
 CROSS_MM = 30  # S: full black this far forward, heading locked, is the crossing
+# The lock holds a little past the crossing: released the moment the sensor
+# left it, the robot came off at -16 degrees, lost the line and pushed into a
+# wall stand while searching (2026-09-26).
+LOCK_AFTER_MM = 60
 
 _last_error = 0
 # KI term: error-seconds summed only in the grey edge band. It restarts on every
@@ -136,6 +140,7 @@ _step_heading = 0.0  # ideal heading while the current step is pending
 _finish_from = None  # robot.distance() when the last planned turn was taken
 _black_from = None  # S: robot.distance() where the current full-black stretch began
 _crossing = False  # S: on the crossing now; the step completes when it leaves it
+_lock_until = -1  # robot.distance() up to which the S lock still holds after the crossing
 _s_clear = True  # S: the sensor has left black since the edge switch; only then look for a crossing
 _switch_ready = False  # settled, walking into the tape to switch edge
 _s_settled = False  # S: settled on the segment after the previous step; the lock may act
@@ -160,8 +165,10 @@ def turn_sign(c):
 def side_of(i):
     # The edge side ("L" or "R") step i follows, or None for KP's own edge.
     # S keeps the edge of the turn before it: no switch just before a crossing,
-    # the heading lock carries it across.
-    i = min(i, len(ROUTE) - 1)
+    # the heading lock carries it across. Past the last step the robot goes back
+    # to KP's own edge (2026-09-26: it stayed on the right edge to the finish).
+    if i >= len(ROUTE):
+        return None
     while i >= 0 and ROUTE[i] == "S":
         i -= 1
     return ROUTE[i] if i >= 0 else None
@@ -217,7 +224,7 @@ def step_taken():
 def track_straight(refl):
     # S: a crossing is full black for CROSS_MM of forward travel while locked;
     # the step is taken once the sensor leaves it, and the lock goes with it.
-    global _black_from, _crossing
+    global _black_from, _crossing, _lock_until
     if refl < BLACK_BELOW:
         if _black_from is None:
             _black_from = robot.distance()
@@ -227,6 +234,7 @@ def track_straight(refl):
     _black_from = None
     if _crossing:
         _crossing = False
+        _lock_until = robot.distance() + LOCK_AFTER_MM
         step_taken()
 
 
@@ -508,8 +516,8 @@ def control_step(n, refl):
         STEER = max(-limit, min(limit, STEER))
         STATE = "FOLLOW"
         light(Color.YELLOW)
-    if straight_armed():
-        STEER = lock_heading(STEER)
+    if straight_armed() or robot.distance() < _lock_until:
+        STEER = lock_heading(STEER)  # the segment heading stays: S does not turn
     robot.drive(arc_speed(STEER), STEER)  # outer wheel at SPD, only the inner one slows
     _last_error = error
 {% endblock %}

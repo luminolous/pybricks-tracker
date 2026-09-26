@@ -394,3 +394,20 @@ the sensor walks into the tape, switching on black; the replay of three
 failed runs gives ~2 s of margin before the green wall); S keeps the edge of
 the turn before it and arms as soon as the robot is settled (no 100 mm); after
 a wall turn the robot follows the edge of the turn it just made.
+
+## 2026-09-26 — first finish with the active edge switch
+
+Run `20260926-141553`: L, R and S all counted and the robot reached the
+finish. Two bugs showed:
+
+- After the last step it stayed on the right edge (the R edge that S keeps)
+  all the way to the finish: 153 white samples, all corrected to the left.
+  After the route the robot now switches back to KP's own edge.
+- The S lock was released the moment the sensor left the crossing, with the
+  heading at -16 degrees. It lost the line and during the search the gyro
+  barely moved while the wheels ran (STALL L): pushing against a wall stand.
+  The lock now holds 60 mm past the crossing.
+
+Also: the test ids for the hub source checks were the whole program; the line
+follower grew past Windows' 32767-character environment limit
+(PYTEST_CURRENT_TEST). The ids are now the program names.
