@@ -362,3 +362,13 @@ Fix: steady is a net change under 5 degrees over 500 ms, and the learnt
 heading stays within 15 degrees of the step's first guess. Replaying the
 recorded headings through the new rule counts the L in 1343 (19.0 s, before
 the green wall) and the L and R in 1341.
+
+Run `20260926-135003`: the L at the yellow junction now counted by itself,
+and the green-wall fallback turned right as planned. Right after it the robot
+turned round: the steady flag was stale (set while it drove north before the
+wall; nothing updates it during the wall turn), so the edge switch to the S
+edge fired at the end of the turn while the robot still rotated. The sensor
+slid off the right side of the top line and the left-edge control turned right
+to -49 degrees. Fix: steady is reset at the end of every wall turn and when a
+search starts or finds the line, so it has to be earned over 500 ms again.
+Note: INNER was -40 (= IMIN) in this run, which makes every full turn sharp.

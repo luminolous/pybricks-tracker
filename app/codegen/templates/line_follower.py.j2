@@ -252,6 +252,18 @@ def reset_integral():
     _integral = 0.0
 
 
+def reset_steady():
+    # After a wall turn or a search the old steady flag is stale: it was set
+    # before the robot spun. Steady must be earned again over STEADY_MS, or the
+    # edge switch fires while the robot still rotates (2026-09-26: switched at
+    # the end of the green-wall turn, the sensor slid off the right side and
+    # the new edge's control turned the robot round).
+    global _steady, _h_ref
+    _steady = False
+    _h_ref = _heading_deg
+    _steady_timer.reset()
+
+
 def on_line():
     # The sensor sees the line (or its edge): restart the lost clocks.
     global _white_from
@@ -335,6 +347,7 @@ def start_search(error, direction=None, first_deg=SEARCH_FIRST_DEG, back_deg=SEA
     STEER = 0
     light(Color.BLUE)
     emit_e("LOST")
+    reset_steady()
 
 
 def search_step(refl):
@@ -346,6 +359,7 @@ def search_step(refl):
         on_line()
         STATE = "FOLLOW"
         emit_e("FOUND")
+        reset_steady()
         return
     limit = _sweep_deg if _search == 1 else _sweep_deg + _back_deg
     if abs(_heading_deg - _sweep_start) >= limit:
@@ -394,6 +408,7 @@ def control_step(n, refl):
         if not wall_turn_step():
             return
         _wall_turn = False  # facing the planned branch; follow or search from here
+        reset_steady()
         track_route(refl)  # the planned step is taken
         on_line()
         STATE = "FOLLOW"

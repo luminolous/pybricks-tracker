@@ -621,3 +621,15 @@ def test_segment_heading_is_learnt_from_the_gyro(source: str) -> None:
     assert "SETTLE_DEG = 30" in source and "ARM_MM = 100" in source
     armed = function(source, "straight_armed")
     assert "robot.distance() - _arm_from >= ARM_MM" in armed
+
+
+def test_steady_is_earned_again_after_a_wall_turn_or_search(source: str) -> None:
+    reset = function(source, "reset_steady")
+    assert "_steady = False" in reset and "_steady_timer.reset()" in reset
+    assert "reset_steady()" in function(source, "start_search")
+    found = function(source, "search_step")
+    assert 'emit_e("FOUND")\n        reset_steady()' in found
+    control = function(source, "control_step")
+    assert "_wall_turn = False" in control
+    after = control[control.index("_wall_turn = False") :]
+    assert after.index("reset_steady()") < after.index("track_route(refl)")
