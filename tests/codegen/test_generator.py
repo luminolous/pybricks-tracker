@@ -307,11 +307,13 @@ def test_turn_and_drift_speeds_come_from_the_config() -> None:
 def test_search_sweeps_forward_by_angle_without_backing_up(source: str) -> None:
     start = function(source, "start_search")
     assert "robot.straight(" not in source  # nothing ever backs up
-    assert "_search_dir = correction_dir(error)" in start
-    assert "_sweep_start = robot.angle()" in start
+    assert "_search_dir = correction_dir(error) if direction is None else direction" in start
+    # sweeps are measured by the gyro: a wrong axle track cannot skew them
+    assert "_sweep_start = _heading_deg" in start
+    assert "robot.angle()" not in source
     step = function(source, "search_step")
-    assert "abs(robot.angle() - _sweep_start) >= limit" in step
-    assert "limit = SEARCH_DEG if _search == 1 else 2 * SEARCH_DEG" in step
+    assert "abs(_heading_deg - _sweep_start) >= limit" in step
+    assert "limit = _sweep_deg if _search == 1 else 2 * _sweep_deg" in step
     assert "if refl < EDGE:" in step  # found, as the original: warna.reflection() < TEPI
     assert 'emit_e("GIVEUP")' in step
     # the sweep swings on the stopped inner wheel: forward, never back
@@ -329,7 +331,9 @@ def test_turns_never_run_a_wheel_backwards(source: str) -> None:
     assert "STEER = max(-limit, min(limit, STEER))" in control
     # both states drive the same way: outer wheel at SPD, only the inner slows
     assert "robot.drive(arc_speed(STEER), STEER)" in control
-    assert "robot.drive(0," not in source  # no pivot in place anywhere
+    # no pivot in place anywhere, except the wall turn: the robot stands at a wall
+    assert source.count("robot.drive(0,") == 1
+    assert "robot.drive(0, STEER)" in function(source, "wall_turn_step")
     arc = function(source, "arc_turn")
     assert "return abs(BASE_SPEED) * (1 - inner) / AXLE_MM * RAD_TO_DEG" in arc
     speed = function(source, "arc_speed")
@@ -469,13 +473,29 @@ def test_turns_are_counted_by_gyro_heading(source: str) -> None:
 def test_wall_turns_the_planned_way_without_blocking(source: str) -> None:
     control = function(source, "control_step")
     assert "if _step < len(ROUTE) and not straight_pending():" in control
-    assert "robot.turn(turn_sign(ROUTE[_step]) * WALL_TURN_DEG, wait=False)" in control
-    assert 'STATE = "WALL"' in control
+    assert "start_wall_turn()" in control
+    assert 'STATE = "WALL"' in function(source, "start_wall_turn")
     # after a wall turn the same wall may still be in view: no second turn until clear
     assert "_wall_armed = False" in control
     assert "if _distance_mm >= OBSTACLE_MM:\n        _wall_armed = True" in control
     assert "elif _wall_armed:" in control
-    assert "if not robot.done():\n            return" in control
+    assert "if not wall_turn_step():\n            return" in control
+
+
+def test_wall_turn_runs_by_gyro_then_sweeps_back_first(source: str) -> None:
+    start = function(source, "start_wall_turn")
+    assert "_wall_target = _step_heading - _wall_sign * 90" in start
+    step = function(source, "wall_turn_step")
+    assert "remaining = (_wall_target - _heading_deg) * -_wall_sign" in step
+    assert "if remaining <= WALL_TOL_DEG or _wall_timer.time() > WALL_TURN_MS:" in step
+    control = function(source, "control_step")
+    # after the turn: the step counts, and off the line it sweeps back toward
+    # the old heading first, 45 degrees, instead of following the next edge
+    after = control[control.index("if not wall_turn_step():") :]
+    assert after.index("track_route(refl)") < after.index(
+        "start_search(0, -_wall_sign, WALL_SEARCH_DEG)"
+    )
+    assert "WALL_SEARCH_DEG = 45" in source
 
 
 def test_finish_only_after_the_route_and_fin_distance(source: str) -> None:

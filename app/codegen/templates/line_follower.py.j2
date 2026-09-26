@@ -50,7 +50,15 @@ SEARCH_DEG = 120  # first sweep; the return sweep covers twice this
 ROUTE = "{{ tuning.route }}"  # planned steps: L, R, S (straight); empty: plain following
 TURN_DONE_DEG = 60  # heading change that counts as a planned turn taken
 SETTLE_DEG = 20  # switch to the next turn's edge once this close to the new heading
-WALL_TURN_DEG = 90  # fallback turn on the spot when a wall blocks a pending turn
+# Wall fallback: turn on the spot to the planned heading, measured by the gyro,
+# not by robot.turn(): with a wrong axle track, turn(90) did 64 degrees and left
+# the sensor on white beside the branch (2026-09-26). If the sensor is then off
+# the line, sweep short both ways: first back toward the old heading, where the
+# branch usually is when the wall stopped the robot short of the junction.
+WALL_TURN_RATE = 90  # deg/s, in place: the robot stands in front of the wall
+WALL_TOL_DEG = 3
+WALL_TURN_MS = 3000  # give up turning after this (wheels blocked)
+WALL_SEARCH_DEG = 45
 CROSS_MM = 30  # S: full black this far forward, heading locked, is the crossing
 
 _last_error = 0
@@ -66,6 +74,10 @@ _search_dir = 1
 _sweep_start = 0
 _obstacle = False
 _wall_turn = False
+_wall_sign = 1  # turn_sign of the planned step the wall turn makes
+_wall_target = 0.0  # heading the wall turn ends at
+_wall_timer = StopWatch()
+_sweep_deg = SEARCH_DEG  # first sweep of the current search; the return sweep is twice this
 _wall_armed = True  # off after a wall turn until the distance reads clear again
 _light = None
 _step = 0  # planned turns taken
@@ -209,12 +221,14 @@ def finish():
     STOPPED = True
 
 
-def start_search(error):
-    global STATE, STEER, _search, _search_dir, _sweep_start
-    _search_dir = correction_dir(error)
+def start_search(error, direction=None, first_deg=SEARCH_DEG):
+    # Sweeps are measured by the gyro heading, which the axle track cannot skew.
+    global STATE, STEER, _search, _search_dir, _sweep_start, _sweep_deg
+    _search_dir = correction_dir(error) if direction is None else direction
+    _sweep_deg = first_deg
     _search = 1
     reset_integral()
-    _sweep_start = robot.angle()
+    _sweep_start = _heading_deg
     STATE = "SEARCH"
     STEER = 0
     light(Color.BLUE)
@@ -231,13 +245,13 @@ def search_step(refl):
         STATE = "FOLLOW"
         emit_e("FOUND")
         return
-    limit = SEARCH_DEG if _search == 1 else 2 * SEARCH_DEG
-    if abs(robot.angle() - _sweep_start) >= limit:
+    limit = _sweep_deg if _search == 1 else 2 * _sweep_deg
+    if abs(_heading_deg - _sweep_start) >= limit:
         robot.stop()
         if _search == 1:
             _search = 2
             _search_dir = -_search_dir
-            _sweep_start = robot.angle()
+            _sweep_start = _heading_deg
         else:
             STEER = 0
             STATE = "STOP"
@@ -249,14 +263,41 @@ def search_step(refl):
     robot.drive(swing_speed(SEARCH_RATE), STEER)  # swing forward, never back
 
 
+def start_wall_turn():
+    global STATE, STEER, _wall_turn, _wall_sign, _wall_target
+    _wall_sign = turn_sign(ROUTE[_step])
+    _wall_target = _step_heading - _wall_sign * 90  # CCW frame: right lowers it
+    _wall_timer.reset()
+    _wall_turn = True
+    STATE = "WALL"
+    STEER = 0
+
+
+def wall_turn_step():
+    # True once the gyro heading reached the target (or the turn timed out).
+    global STEER
+    remaining = (_wall_target - _heading_deg) * -_wall_sign
+    if remaining <= WALL_TOL_DEG or _wall_timer.time() > WALL_TURN_MS:
+        robot.stop()
+        STEER = 0
+        return True
+    STEER = _wall_sign * WALL_TURN_RATE
+    robot.drive(0, STEER)
+    return False
+
+
 def control_step(n, refl):
     global STATE, STEER, _last_error, _obstacle, _search, _wall_turn, _wall_armed, _integral
     if _wall_turn:
-        if not robot.done():
+        if not wall_turn_step():
             return
         _wall_turn = False  # facing the planned branch; follow or search from here
+        track_route(refl)  # the planned step is taken
         on_line()
         STATE = "FOLLOW"
+        if refl > WHITE_ABOVE:
+            start_search(0, -_wall_sign, WALL_SEARCH_DEG)
+            return
     if not _search:
         track_route(refl)
 {% if distance %}
@@ -274,10 +315,8 @@ def control_step(n, refl):
         if _step < len(ROUTE) and not straight_pending():
             # the branch was missed: turn the planned way on the spot
             _search = 0
-            _wall_turn = True
             _wall_armed = False  # the same wall may still be in view after the turn
-            STATE = "WALL"
-            robot.turn(turn_sign(ROUTE[_step]) * WALL_TURN_DEG, wait=False)
+            start_wall_turn()
             return
         STATE = "OBSTACLE"
         return

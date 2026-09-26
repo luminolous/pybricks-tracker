@@ -253,3 +253,23 @@ hub can cut out mid-run around 6.1-6.2 V at rest.
 The header icon used to show only the flags, so it stayed orange from 6.8 V
 until the hub died. Now the fill follows the voltage from 6.0 V (empty) to
 8.19 V (full), turns red below 6.3 V, and the console warns once: charge now.
+
+## 2026-09-26 — top route, U-turn at the yellow junction
+
+Route `LRS`, KP +1.5 (left edge), SPD 70-100, THR 140. In most runs the robot
+U-turned at the yellow junction; LOCK (10-20) made no difference, it only acts
+before an `S`. The recording (`20260926-104804`) shows why:
+
+- The robot had started the left turn on its own (PIVOT left on black) when
+  the ultrasonic saw the yellow wall at 125 mm (THR 140) and started the wall
+  fallback turn.
+- `robot.turn(90)` did 64 degrees by the gyro (the axle track is still wrong),
+  leaving the sensor on white just left of the branch line.
+- The robot then tracked the next step's edge, took the line to be on its
+  left, turned left on white, lost the line and swept left: 170 degrees, a
+  U-turn.
+
+Fix: the wall turn now runs by the gyro to the planned heading, and if the
+sensor is off the line it sweeps 45 degrees back toward the old heading first.
+Search sweeps are measured by the gyro too. Keep THR small (50-80 mm) so the
+fallback only fires when the branch was really missed.
