@@ -246,7 +246,7 @@ def check_commands():
                 BASE_SPEED = float(value)
                 emit_e("ACK", "SPD:{}".format(BASE_SPEED))
             elif key == "INNER":
-                INNER_PCT = max(0.0, min(100.0, float(value)))
+                INNER_PCT = max(-100.0, min(100.0, float(value)))
                 emit_e("ACK", "INNER:{}".format(INNER_PCT))
             elif key == "SRCH":
                 SEARCH_RATE = max(0.0, min(DRV_MAX_TURN, float(value)))

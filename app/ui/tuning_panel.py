@@ -66,7 +66,7 @@ KNOBS = (
     Knob("ki", "KI", -5.0, 5.0, 0.05, 2, section="pid"),
     Knob("kd", "KD", -20.0, 20.0, 0.1, 2, section="pid"),
     Knob("base_speed_mm_s", "SPD", 0.0, SPD_MAX, 5.0, 0, " mm/s", LINE_AND_TELEOP, section="speed"),
-    Knob("inner_pct", "INNER", 0.0, 100.0, 5.0, 0, " %", section="speed"),
+    Knob("inner_pct", "INNER", -100.0, 100.0, 5.0, 0, " %", section="speed"),
     Knob("search_deg_s", "SRCH", 10.0, TRN_MAX, 5.0, 0, DEG_S, section="speed"),
     Knob("obstacle_threshold_mm", "THR", 20.0, 300.0, 5.0, 0, " mm", integer=True, section="route"),
     Knob("finish_mm", "FIN", 0.0, 5000.0, 10.0, 0, " mm", section="route"),

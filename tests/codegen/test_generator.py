@@ -275,7 +275,8 @@ def test_original_constants(source: str) -> None:
         "SEARCH_RATE = 60.0",
         "LOST_MS = 150",
         "LOST_MM = 30",
-        "SEARCH_DEG = 120",
+        "SEARCH_FIRST_DEG = 45",
+        "SEARCH_BACK_DEG = 180",
         "BLACK_BELOW = (BLACK + EDGE) // 2",
         "WHITE_ABOVE = (WHITE + EDGE) // 2",
     ):
@@ -285,7 +286,7 @@ def test_original_constants(source: str) -> None:
 def test_pivot_and_search_rates_are_live(source: str) -> None:
     """INNER and SRCH change the turns mid-run; each applied value is acknowledged."""
     commands = function(source, "check_commands")
-    assert "INNER_PCT = max(0.0, min(100.0, float(value)))" in commands
+    assert "INNER_PCT = max(-100.0, min(100.0, float(value)))" in commands
     assert 'emit_e("ACK", "INNER:{}".format(INNER_PCT))' in commands
     assert "SEARCH_RATE = max(0.0, min(DRV_MAX_TURN, float(value)))" in commands
     assert 'emit_e("ACK", "SRCH:{}".format(SEARCH_RATE))' in commands
@@ -313,7 +314,8 @@ def test_search_sweeps_forward_by_angle_without_backing_up(source: str) -> None:
     assert "robot.angle()" not in source
     step = function(source, "search_step")
     assert "abs(_heading_deg - _sweep_start) >= limit" in step
-    assert "limit = _sweep_deg if _search == 1 else 2 * _sweep_deg" in step
+    # short first sweep, then back past the start: a corner and a hairpin both covered
+    assert "limit = _sweep_deg if _search == 1 else _sweep_deg + _back_deg" in step
     assert "if refl < EDGE:" in step  # found, as the original: warna.reflection() < TEPI
     assert 'emit_e("GIVEUP")' in step
     # the sweep swings on the stopped inner wheel: forward, never back
@@ -327,7 +329,8 @@ def test_turns_never_run_a_wheel_backwards(source: str) -> None:
     assert "if refl < BLACK_BELOW or refl > WHITE_ABOVE:" in control
     assert "STEER = correction_dir(error) * arc_turn(INNER_PCT / 100)" in control
     # PD on the edge never turns sharper than that
-    assert "limit = arc_turn(INNER_PCT / 100)" in control
+    # PD never reverses a wheel, even when INNER is below 0
+    assert "limit = arc_turn(max(0.0, INNER_PCT) / 100)" in control
     assert "STEER = max(-limit, min(limit, STEER))" in control
     # both states drive the same way: outer wheel at SPD, only the inner slows
     assert "robot.drive(arc_speed(STEER), STEER)" in control
@@ -493,7 +496,7 @@ def test_wall_turn_runs_by_gyro_then_sweeps_back_first(source: str) -> None:
     # the old heading first, 45 degrees, instead of following the next edge
     after = control[control.index("if not wall_turn_step():") :]
     assert after.index("track_route(refl)") < after.index(
-        "start_search(0, -_wall_sign, WALL_SEARCH_DEG)"
+        "start_search(0, -_wall_sign, WALL_SEARCH_DEG, WALL_SEARCH_DEG)"
     )
     assert "WALL_SEARCH_DEG = 45" in source
 
@@ -558,3 +561,16 @@ def test_lock_command_is_live_and_clamped(source: str) -> None:
     commands = function(source, "check_commands")
     assert "LOCK_DEG = max(5.0, min(60.0, float(value)))" in commands
     assert 'emit_e("ACK", "LOCK:{}".format(LOCK_DEG))' in commands
+
+
+def test_negative_inner_allows_sharper_turns_on_black_or_white_only() -> None:
+    # arc_turn / arc_speed with the outer wheel at v and the inner at k * v:
+    # centre speed v(1+k)/2, turn v(1-k)/L. k = -1 spins in place.
+    v, axle = 100.0, 112.0
+    for k, centre in ((0.2, 60.0), (0.0, 50.0), (-0.3, 35.0), (-1.0, 0.0)):
+        turn_rad = v * (1 - k) / axle
+        assert round(v - turn_rad * axle / 2, 6) == centre  # arc_speed(arc_turn(k))
+    source = render(
+        replace(DEFAULT, tuning=replace(DEFAULT.tuning, inner_pct=-30.0)), "line_follower"
+    )
+    assert re.search(r"^INNER_PCT = -30.0", source, re.MULTILINE)

@@ -184,8 +184,9 @@ class TuningParams:
     base_speed_mm_s: float = 50.0
     obstacle_threshold_mm: int = 50
     # Line follower turns, live like SPD. On black: arc with the inner wheel at
-    # inner_pct of the outer (SPD), both forward; the original pivoted in place
-    # at 180 deg/s. Lost line: swing on the stopped inner wheel at
+    # inner_pct of the outer (SPD); below 0 the inner wheel runs backwards for
+    # sharp corners, -100 spins in place. The original pivoted in place at
+    # 180 deg/s. Lost line: swing on the stopped inner wheel at
     # search_deg_s (the original spun in place at 150 after backing up).
     inner_pct: float = 20.0
     search_deg_s: float = 60.0

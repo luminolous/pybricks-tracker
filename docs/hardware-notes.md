@@ -273,3 +273,23 @@ Fix: the wall turn now runs by the gyro to the planned heading, and if the
 sensor is off the line it sweeps 45 degrees back toward the old heading first.
 Search sweeps are measured by the gyro too. Keep THR small (50-80 mm) so the
 fallback only fires when the branch was really missed.
+
+## 2026-09-26 — the hairpin after the zigzag
+
+Run `20260926-110245` (route `LRS`, KP +1.5, SPD 100, INNER 20). The zigzag
+went through with many LOST/FOUND; at the hairpin (~135 degrees left) the
+robot cut through the line's arm and lost it, then swept right, the wrong way,
+until stopped.
+
+- Without a wheel going backwards the tightest radius is fixed by geometry:
+  R = axle/2 * (1 + inner) / (1 - inner). INNER 20 % gives 84 mm with the
+  configured 112 mm axle (~120 mm with the real ~160 mm). Too wide for the
+  hairpin. Speed does not change the radius.
+- From one sensor, "cut through a hairpin" and "reached a corner" look the
+  same when the line is lost (same black-then-white pattern in the zigzag).
+
+Changes: INNER may go below 0 (inner wheel backwards, -100 = spin in place),
+only for the full turn on black or white; PD steering never reverses a wheel.
+The search sweeps 45 degrees to the usual side first, then back to 180 past
+the start, instead of 120 then 240. The drift test gave axle 159.49 mm three
+times; apply it (after the straight test) before tuning INNER.

@@ -7,13 +7,15 @@
 # Blocking moves became steps of the base loop, so commands, the watchdog and
 # telemetry keep running during a search.
 #
-# No wheel ever runs backwards here (user request, 2026-09-24): pivoting in
-# place and backing up looked like the robot reversing whenever it flipped
-# between black and white. Every turn keeps the outer wheel at SPD and only
-# slows the inner one. On full black or full white the inner wheel runs at
-# INNER_PCT of SPD: the sharpest turn, back toward the edge. In between, PD
-# steering is capped at that same turn. The search swings on the stopped inner
-# wheel.
+# Wheels do not run backwards unless INNER_PCT is set below 0 (user request,
+# 2026-09-24): pivoting in place and backing up looked like the robot
+# reversing whenever it flipped between black and white. Every turn keeps the
+# outer wheel at SPD and only slows the inner one. On full black or full white
+# the inner wheel runs at INNER_PCT of SPD: the sharpest turn, back toward the
+# edge. Below 0 the inner wheel runs backwards, for corners sharper than the
+# arc allows (2026-09-26, the hairpin after the zigzag); -100 spins in place.
+# PD steering in between never reverses a wheel. The search swings on the
+# stopped inner wheel.
 #
 # Full white turns as hard as full black (2026-09-25). The original only
 # pivoted on black; on white the PD gave KP * error (73 deg/s against 102 on
@@ -45,7 +47,14 @@ RAD_TO_DEG = 180 / math.pi
 # Swinging back barely moves it forward; running off the line does.
 LOST_MS = 150
 LOST_MM = 30
-SEARCH_DEG = 120  # first sweep; the return sweep covers twice this
+# Search: a short first sweep toward the usual side (the correction the white
+# asks for: a corner), then a long sweep back past the start (the side the
+# robot was turning on black: a hairpin it cut through). One sensor cannot tell
+# the two apart when the line is lost, so both are covered, the likely one
+# first. The original swept 120 then 240, which drifted far the wrong way at a
+# hairpin before coming back (2026-09-26).
+SEARCH_FIRST_DEG = 45
+SEARCH_BACK_DEG = 180  # the return sweep ends this far past the start heading
 
 ROUTE = "{{ tuning.route }}"  # planned steps: L, R, S (straight); empty: plain following
 TURN_DONE_DEG = 60  # heading change that counts as a planned turn taken
@@ -77,7 +86,8 @@ _wall_turn = False
 _wall_sign = 1  # turn_sign of the planned step the wall turn makes
 _wall_target = 0.0  # heading the wall turn ends at
 _wall_timer = StopWatch()
-_sweep_deg = SEARCH_DEG  # first sweep of the current search; the return sweep is twice this
+_sweep_deg = SEARCH_FIRST_DEG  # first sweep of the current search
+_back_deg = SEARCH_BACK_DEG  # the return sweep ends this far past the start
 _wall_armed = True  # off after a wall turn until the distance reads clear again
 _light = None
 _step = 0  # planned turns taken
@@ -228,11 +238,12 @@ def finish():
     STOPPED = True
 
 
-def start_search(error, direction=None, first_deg=SEARCH_DEG):
+def start_search(error, direction=None, first_deg=SEARCH_FIRST_DEG, back_deg=SEARCH_BACK_DEG):
     # Sweeps are measured by the gyro heading, which the axle track cannot skew.
-    global STATE, STEER, _search, _search_dir, _sweep_start, _sweep_deg
+    global STATE, STEER, _search, _search_dir, _sweep_start, _sweep_deg, _back_deg
     _search_dir = correction_dir(error) if direction is None else direction
     _sweep_deg = first_deg
+    _back_deg = back_deg
     _search = 1
     reset_integral()
     _sweep_start = _heading_deg
@@ -252,7 +263,7 @@ def search_step(refl):
         STATE = "FOLLOW"
         emit_e("FOUND")
         return
-    limit = _sweep_deg if _search == 1 else 2 * _sweep_deg
+    limit = _sweep_deg if _search == 1 else _sweep_deg + _back_deg
     if abs(_heading_deg - _sweep_start) >= limit:
         robot.stop()
         if _search == 1:
@@ -303,7 +314,7 @@ def control_step(n, refl):
         on_line()
         STATE = "FOLLOW"
         if refl > WHITE_ABOVE:
-            start_search(0, -_wall_sign, WALL_SEARCH_DEG)
+            start_search(0, -_wall_sign, WALL_SEARCH_DEG, WALL_SEARCH_DEG)
             return
     if not _search:
         track_route(refl)
@@ -355,12 +366,13 @@ def control_step(n, refl):
     else:
         _integral = max(-INTEGRAL_MAX, min(INTEGRAL_MAX, _integral + error * LOOP_MS / 1000))
         STEER = edge_flip() * (KP * error + KI * _integral + KD * (error - _last_error))
-        limit = arc_turn(INNER_PCT / 100)  # never sharper than the turn on black
+        # never sharper than the full turn, and never with a wheel backwards
+        limit = arc_turn(max(0.0, INNER_PCT) / 100)
         STEER = max(-limit, min(limit, STEER))
         STATE = "FOLLOW"
         light(Color.YELLOW)
     if straight_pending():
         STEER = lock_heading(STEER)
-    robot.drive(arc_speed(STEER), STEER)  # outer wheel at SPD, inner slower, both forward
+    robot.drive(arc_speed(STEER), STEER)  # outer wheel at SPD, only the inner one slows
     _last_error = error
 {% endblock %}
