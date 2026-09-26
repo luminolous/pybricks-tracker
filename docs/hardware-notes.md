@@ -293,3 +293,22 @@ only for the full turn on black or white; PD steering never reverses a wheel.
 The search sweeps 45 degrees to the usual side first, then back to 180 past
 the start, instead of 120 then 240. The drift test gave axle 159.49 mm three
 times; apply it (after the straight test) before tuning INNER.
+
+## 2026-09-26 — off the track after the green-wall corner
+
+Run `20260926-120219` (route `LRS`, KP +1.5, INNER -10, SPD 70, axle 158.8
+applied). After the R corner at the green wall the robot drifted right off
+the line. Two bugs in the route logic, not INNER:
+
+- The S heading lock armed as soon as the R turn counted (at 60 degrees),
+  with the heading still 30 degrees from the new segment. Steering back left
+  toward the line was cut to 0.
+- The edge switch (R step: right edge, then KP's left edge for S) happened
+  on white, with the sensor right of the line. The left-edge control took the
+  line to be on its right and turned right, away from it.
+
+Fix: the edge switch waits until the robot has settled AND the sensor is on
+full black, so the new edge's control carries it across the tape. The S lock
+and crossing detection arm only after that switch and once the sensor has left
+black again. INNER below 0 makes every full turn sharper, the green corner
+included: keep it at 0-20 unless a hairpin needs more.

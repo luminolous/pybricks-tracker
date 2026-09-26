@@ -96,6 +96,7 @@ _step_heading = 0.0  # ideal heading while the current step is pending
 _finish_from = None  # robot.distance() when the last planned turn was taken
 _black_from = None  # S: robot.distance() where the current full-black stretch began
 _crossing = False  # S: on the crossing now; the step completes when it leaves it
+_s_clear = True  # S: the sensor has left black since the edge switch; only then look for a crossing
 
 
 def light(color):
@@ -125,6 +126,13 @@ def edge_flip():
 
 def straight_pending():
     return _step < len(ROUTE) and ROUTE[_step] == "S"
+
+
+def straight_armed():
+    # The S lock and crossing detection start only once the robot has settled on
+    # the new line and switched edge (2026-09-26: armed right after the R
+    # corner at 30 degrees off, the lock blocked the way back to the line).
+    return straight_pending() and _side_step == _step and _s_clear
 
 
 def lock_heading(steer):
@@ -205,13 +213,22 @@ def setup():
 
 
 def track_route(refl):
-    global _side_step, _step_heading
-    if _side_step < _step and abs(_heading_deg - _step_heading) < SETTLE_DEG:
-        _side_step = _step  # settled on the new line: track the next turn's edge
+    # Edge switch: only once settled on the new line AND with the sensor on full
+    # black. From black, the new edge's control carries the sensor across the
+    # tape to the new side. Switching on white put the sensor on the wrong side:
+    # the new edge's control then turned away from the line (2026-09-26).
+    global _side_step, _step_heading, _s_clear
+    settled = abs(_heading_deg - _step_heading) < SETTLE_DEG
+    if _side_step < _step and settled and refl < BLACK_BELOW:
+        _side_step = _step
+        _s_clear = False  # crossing the tape now is the switch, not a crossing
     if _step >= len(ROUTE):
         return
     if ROUTE[_step] == "S":
-        track_straight(refl)  # straight on: the ideal heading stays
+        if _side_step == _step and not _s_clear and refl >= BLACK_BELOW:
+            _s_clear = True
+        if straight_armed():
+            track_straight(refl)  # straight on: the ideal heading stays
         return
     sign = turn_sign(ROUTE[_step])
     # the app frame is CCW-positive: a right turn lowers the heading
@@ -371,7 +388,7 @@ def control_step(n, refl):
         STEER = max(-limit, min(limit, STEER))
         STATE = "FOLLOW"
         light(Color.YELLOW)
-    if straight_pending():
+    if straight_armed():
         STEER = lock_heading(STEER)
     robot.drive(arc_speed(STEER), STEER)  # outer wheel at SPD, only the inner one slows
     _last_error = error

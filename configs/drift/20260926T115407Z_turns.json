@@ -1,0 +1,42 @@
+{
+  "test": "turns",
+  "at": "2026-09-26T11:54:07+00:00",
+  "geometry": {
+    "wheel_diameter_mm": 55.7,
+    "axle_track_mm": 158.9,
+    "sensor_offset_mm": 40.0
+  },
+  "estimate": {
+    "t_ms": 20277,
+    "x_mm": -0.6,
+    "y_mm": 2.2,
+    "heading_deg": -1800.7,
+    "reflection": 100,
+    "steer": 0,
+    "speed_mm_s": 0.0,
+    "hsv": [
+      0,
+      0,
+      100
+    ]
+  },
+  "measured": {
+    "distance_mm": 1000.0,
+    "rotation_deg": 1801.0,
+    "end_x_mm": 0.0,
+    "end_y_mm": 0.0
+  },
+  "result": {
+    "commanded_deg": 1800,
+    "imu_deg": 1800.7,
+    "real_deg": 1801.0,
+    "wheel_error_deg_per_rev": -0.2,
+    "heading_error_deg": -0.3,
+    "passed": true,
+    "suggested": {
+      "wheel_diameter_mm": 55.7,
+      "axle_track_mm": 158.81,
+      "sensor_offset_mm": 40.0
+    }
+  }
+}

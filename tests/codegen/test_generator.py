@@ -468,7 +468,7 @@ def test_turns_are_counted_by_gyro_heading(source: str) -> None:
     assert 'emit_e("TURN", "{}/{} {}".format(_step, len(ROUTE), ROUTE[_step - 1]))' in taken
     assert "_finish_from = robot.distance()" in taken
     # the edge switches only once the heading settled on the new line
-    assert "if _side_step < _step and abs(_heading_deg - _step_heading) < SETTLE_DEG:" in track
+    assert "if _side_step < _step and settled and refl < BLACK_BELOW:" in track
     # search sweeps must not count as turns
     assert "if not _search:\n        track_route(refl)" in function(source, "control_step")
 
@@ -548,13 +548,13 @@ def test_straight_step_locks_heading_across_a_crossing() -> None:
     assert "if off >= LOCK_DEG and steer < 0:" in lock
     assert "if off <= -LOCK_DEG and steer > 0:" in lock
     control = function(source, "control_step")
-    assert "if straight_pending():\n        STEER = lock_heading(STEER)" in control
+    assert "if straight_armed():\n        STEER = lock_heading(STEER)" in control
     # the crossing: CROSS_MM of full black, taken once the sensor leaves it
     cross = function(source, "track_straight")
     assert "robot.distance() - _black_from >= CROSS_MM" in cross
     assert "if _crossing:\n        _crossing = False\n        step_taken()" in cross
     track = function(source, "track_route")
-    assert 'if ROUTE[_step] == "S":\n        track_straight(refl)' in track
+    assert "if straight_armed():\n            track_straight(refl)" in track
 
 
 def test_lock_command_is_live_and_clamped(source: str) -> None:
@@ -574,3 +574,18 @@ def test_negative_inner_allows_sharper_turns_on_black_or_white_only() -> None:
         replace(DEFAULT, tuning=replace(DEFAULT.tuning, inner_pct=-30.0)), "line_follower"
     )
     assert re.search(r"^INNER_PCT = -30.0", source, re.MULTILINE)
+
+
+def test_edge_switch_waits_for_black_and_arms_s_after(source: str) -> None:
+    track = function(source, "track_route")
+    # switch only settled and on full black: the new edge's control crosses the tape
+    assert "settled = abs(_heading_deg - _step_heading) < SETTLE_DEG" in track
+    assert "if _side_step < _step and settled and refl < BLACK_BELOW:" in track
+    assert "_s_clear = False" in track
+    # S arms once switched and off black again, so the switch is not a crossing
+    assert "if _side_step == _step and not _s_clear and refl >= BLACK_BELOW:" in track
+    armed = function(source, "straight_armed")
+    assert "return straight_pending() and _side_step == _step and _s_clear" in armed
+    # the wall rule still treats a pending S as "do not turn"
+    control = function(source, "control_step")
+    assert "if _step < len(ROUTE) and not straight_pending():" in control
