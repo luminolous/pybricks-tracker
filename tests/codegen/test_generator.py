@@ -496,9 +496,11 @@ def test_wall_turn_runs_by_gyro_then_sweeps_back_first(source: str) -> None:
     # the old heading first, 45 degrees, instead of following the next edge
     after = control[control.index("if not wall_turn_step():") :]
     assert after.index("track_route(refl)") < after.index(
-        "start_search(0, -_wall_sign, WALL_SEARCH_DEG, WALL_SEARCH_DEG)"
+        "start_search(0, -_wall_sign, WALL_SEARCH_FIRST_DEG, WALL_SEARCH_BACK_DEG)"
     )
-    assert "WALL_SEARCH_DEG = 45" in source
+    assert "WALL_SEARCH_FIRST_DEG = 90" in source and "WALL_SEARCH_BACK_DEG = 45" in source
+    # telemetry keeps SEARCH while the robot searches after a wall turn
+    assert 'if not _search:\n            STATE = "FOLLOW"' in control
 
 
 def test_finish_only_after_the_route_and_fin_distance(source: str) -> None:

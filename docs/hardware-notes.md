@@ -312,3 +312,21 @@ full black, so the new edge's control carries it across the tape. The S lock
 and crossing detection arm only after that switch and once the sensor has left
 black again. INNER below 0 makes every full turn sharper, the green corner
 included: keep it at 0-20 unless a hairpin needs more.
+
+## 2026-09-26 — INNER -20/-25/-30 runs
+
+Runs `20260926-1248..1252` (route `LRS`, KP +1.5, SPD 75, THR 100). With
+INNER -25 and -30 the robot never reached the green wall: every failure was
+step 1, the first junction wall.
+
+- The natural left turn is too slow to finish before the wall, so the wall
+  fallback turns the robot in every run (OBS at 96-99 mm).
+- After the in-place turn the branch is ahead and to the old-heading side.
+  In the run that worked, the line appeared 40-45 degrees into the 45 degree
+  first sweep: luck. In the others the sweep ended just short, the return
+  sweep went the wrong way, and the robot gave up.
+- Fix: first sweep 90 degrees toward the old heading, then 45 past the start
+  the other way. Telemetry now keeps SEARCH during that search (it showed
+  FOLLOW once the wall was out of range).
+- INNER is still one value for every full turn: -20 reached the hairpin but
+  did not take it cleanly.

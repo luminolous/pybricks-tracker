@@ -62,12 +62,16 @@ SETTLE_DEG = 20  # switch to the next turn's edge once this close to the new hea
 # Wall fallback: turn on the spot to the planned heading, measured by the gyro,
 # not by robot.turn(): with a wrong axle track, turn(90) did 64 degrees and left
 # the sensor on white beside the branch (2026-09-26). If the sensor is then off
-# the line, sweep short both ways: first back toward the old heading, where the
-# branch usually is when the wall stopped the robot short of the junction.
+# the line, sweep back toward the old heading first: the wall stops the robot
+# short of the junction, so the branch is ahead on that side. At the yellow
+# wall the line showed up only 40-45 degrees into that sweep, so a 45 degree
+# sweep found it by luck and missed it in other runs (2026-09-26): 90 degrees
+# that way, then 45 past the start the other way.
 WALL_TURN_RATE = 90  # deg/s, in place: the robot stands in front of the wall
 WALL_TOL_DEG = 3
 WALL_TURN_MS = 3000  # give up turning after this (wheels blocked)
-WALL_SEARCH_DEG = 45
+WALL_SEARCH_FIRST_DEG = 90
+WALL_SEARCH_BACK_DEG = 45
 CROSS_MM = 30  # S: full black this far forward, heading locked, is the crossing
 
 _last_error = 0
@@ -331,7 +335,7 @@ def control_step(n, refl):
         on_line()
         STATE = "FOLLOW"
         if refl > WHITE_ABOVE:
-            start_search(0, -_wall_sign, WALL_SEARCH_DEG, WALL_SEARCH_DEG)
+            start_search(0, -_wall_sign, WALL_SEARCH_FIRST_DEG, WALL_SEARCH_BACK_DEG)
             return
     if not _search:
         track_route(refl)
@@ -357,7 +361,8 @@ def control_step(n, refl):
         return
     if _obstacle:
         _obstacle = False
-        STATE = "FOLLOW"
+        if not _search:
+            STATE = "FOLLOW"  # a search after a wall turn keeps its SEARCH state
 {% endif %}
     if _search:
         search_step(refl)
