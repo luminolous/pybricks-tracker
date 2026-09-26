@@ -61,6 +61,7 @@ OBSTACLE_MM = {{ tuning.obstacle_threshold_mm }}
 INNER_PCT = {{ tuning.inner_pct }}  # line follower turn on black: inner wheel % of outer
 SEARCH_RATE = {{ tuning.search_deg_s }}  # deg/s, line follower sweep for a lost line
 FINISH_MM = {{ tuning.finish_mm }}  # line follower: route end to finish, minimum mm
+LOCK_DEG = {{ tuning.route_lock_deg }}  # line follower, route step S: heading lock
 
 # teleop setpoint (protocol.md, DRV); only teleop.py.j2 drives from it
 DRV_MAX_SPEED = {{ max_speed }}
@@ -223,7 +224,7 @@ def split_once(text):
 
 
 def check_commands():
-    global KP, KI, KD, BASE_SPEED, OBSTACLE_MM, INNER_PCT, SEARCH_RATE, FINISH_MM
+    global KP, KI, KD, BASE_SPEED, OBSTACLE_MM, INNER_PCT, SEARCH_RATE, FINISH_MM, LOCK_DEG
     global STOPPED, PAUSED, DRV_SPEED, DRV_TURN
     while _poll.poll(0):
         line = usys.stdin.readline().strip()
@@ -253,6 +254,9 @@ def check_commands():
             elif key == "FIN":
                 FINISH_MM = max(0.0, float(value))
                 emit_e("ACK", "FIN:{}".format(FINISH_MM))
+            elif key == "LOCK":
+                LOCK_DEG = max(5.0, min(60.0, float(value)))
+                emit_e("ACK", "LOCK:{}".format(LOCK_DEG))
             elif key == "THR":
                 OBSTACLE_MM = int(value)
                 emit_e("ACK", "THR:{}".format(OBSTACLE_MM))

@@ -443,7 +443,8 @@ def test_edge_follows_the_next_turn(source: str) -> None:
     flip = function(source, "edge_flip")
     assert "if not ROUTE:\n        return 1" in flip  # no route: the original behaviour
     assert "tuned = 1 if KP < 0 else -1" in flip  # negative KP tracks the right edge
-    assert "return tuned * turn_sign(ROUTE[min(_side_step, len(ROUTE) - 1)])" in flip
+    assert "step = ROUTE[min(_side_step, len(ROUTE) - 1)]" in flip
+    assert "return tuned * turn_sign(step)" in flip
     control = function(source, "control_step")
     assert (
         "STEER = edge_flip() * (KP * error + KI * _integral + KD * (error - _last_error))"
@@ -455,17 +456,19 @@ def test_turns_are_counted_by_gyro_heading(source: str) -> None:
     track = function(source, "track_route")
     assert "if (_step_heading - _heading_deg) * sign >= TURN_DONE_DEG:" in track
     assert "_step_heading -= sign * 90" in track
-    assert 'emit_e("TURN", "{}/{} {}".format(_step, len(ROUTE), ROUTE[_step - 1]))' in track
-    assert "_finish_from = robot.distance()" in track
+    assert "step_taken()" in track
+    taken = function(source, "step_taken")
+    assert 'emit_e("TURN", "{}/{} {}".format(_step, len(ROUTE), ROUTE[_step - 1]))' in taken
+    assert "_finish_from = robot.distance()" in taken
     # the edge switches only once the heading settled on the new line
     assert "if _side_step < _step and abs(_heading_deg - _step_heading) < SETTLE_DEG:" in track
     # search sweeps must not count as turns
-    assert "if not _search:\n        track_route()" in function(source, "control_step")
+    assert "if not _search:\n        track_route(refl)" in function(source, "control_step")
 
 
 def test_wall_turns_the_planned_way_without_blocking(source: str) -> None:
     control = function(source, "control_step")
-    assert "if _step < len(ROUTE):" in control
+    assert "if _step < len(ROUTE) and not straight_pending():" in control
     assert "robot.turn(turn_sign(ROUTE[_step]) * WALL_TURN_DEG, wait=False)" in control
     assert 'STATE = "WALL"' in control
     # after a wall turn the same wall may still be in view: no second turn until clear
@@ -504,3 +507,31 @@ def test_ki_runs_only_in_the_grey_band_with_anti_windup(source: str) -> None:
     assert "reset_integral()" in function(source, "start_search")
     commands = function(source, "check_commands")
     assert 'emit_e("ACK", "KI:{}".format(KI))' in commands
+
+
+def test_straight_step_locks_heading_across_a_crossing() -> None:
+    config = replace(DEFAULT, tuning=replace(DEFAULT.tuning, route="LRS", route_lock_deg=25.0))
+    source = render(config, "line_follower")
+    assert re.search(r'^ROUTE = "LRS"', source, re.MULTILINE)
+    assert re.search(r"^LOCK_DEG = 25.0", source, re.MULTILINE)
+    assert "CROSS_MM = 30" in source
+    # S keeps the KP edge and the ideal heading; the lock cuts steering past it
+    assert 'if step == "S":\n        return 1' in function(source, "edge_flip")
+    lock = function(source, "lock_heading")
+    assert "off = _heading_deg - _step_heading" in lock
+    assert "if off >= LOCK_DEG and steer < 0:" in lock
+    assert "if off <= -LOCK_DEG and steer > 0:" in lock
+    control = function(source, "control_step")
+    assert "if straight_pending():\n        STEER = lock_heading(STEER)" in control
+    # the crossing: CROSS_MM of full black, taken once the sensor leaves it
+    cross = function(source, "track_straight")
+    assert "robot.distance() - _black_from >= CROSS_MM" in cross
+    assert "if _crossing:\n        _crossing = False\n        step_taken()" in cross
+    track = function(source, "track_route")
+    assert 'if ROUTE[_step] == "S":\n        track_straight(refl)' in track
+
+
+def test_lock_command_is_live_and_clamped(source: str) -> None:
+    commands = function(source, "check_commands")
+    assert "LOCK_DEG = max(5.0, min(60.0, float(value)))" in commands
+    assert 'emit_e("ACK", "LOCK:{}".format(LOCK_DEG))' in commands

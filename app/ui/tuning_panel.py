@@ -1,9 +1,10 @@
 """Tuning knobs: slider plus exact-entry field, and the value the hub acknowledged.
 
 Each program shows only the knobs it uses (its group):
-- line: KP, KI, KD, SPD, INNER (inner wheel % on black), SRCH (search), THR (wall distance), FIN
-  (route end to finish), sent live and acknowledged; plus the route, a row of
-  L/R turn buttons rendered into the program at Run
+- line, in three foldable sections: PID (KP, KI, KD), Speed (SPD, INNER, SRCH)
+  and Route (THR, FIN, LOCK, and the route: L/R/S step buttons rendered into
+  the program at Run). The knobs are sent live and acknowledged. A folded
+  section shows a one-line summary instead, so the event list keeps its room.
 - teleop: SPD, TURN, applied in the app (every DRV carries them)
 - drift: DSPD, DTRN, rendered into the program and locked while it runs
 
@@ -53,25 +54,31 @@ class Knob:
     groups: frozenset[str] = frozenset({"line"})
     hub: bool = True  # sent to the hub live and acknowledged (protocol.md)
     integer: bool = False  # the TuningParams field is an int
+    section: str | None = None  # foldable section in the line group
 
 
 DEG_S = " °/s"
 SPD_MAX = float(MAX_SPEED_MM_S)
 TRN_MAX = float(MAX_TURN_DEG_S)
+LINE_AND_TELEOP = frozenset({"line", "teleop"})
 KNOBS = (
-    Knob("kp", "KP", -10.0, 10.0, 0.05, 2),
-    Knob("ki", "KI", -5.0, 5.0, 0.05, 2),
-    Knob("kd", "KD", -20.0, 20.0, 0.1, 2),
-    Knob("base_speed_mm_s", "SPD", 0.0, SPD_MAX, 5.0, 0, " mm/s", frozenset({"line", "teleop"})),
-    Knob("inner_pct", "INNER", 0.0, 100.0, 5.0, 0, " %"),
-    Knob("search_deg_s", "SRCH", 10.0, TRN_MAX, 5.0, 0, DEG_S),
-    Knob("obstacle_threshold_mm", "THR", 20.0, 300.0, 5.0, 0, " mm", integer=True),
-    Knob("finish_mm", "FIN", 0.0, 5000.0, 10.0, 0, " mm"),
+    Knob("kp", "KP", -10.0, 10.0, 0.05, 2, section="pid"),
+    Knob("ki", "KI", -5.0, 5.0, 0.05, 2, section="pid"),
+    Knob("kd", "KD", -20.0, 20.0, 0.1, 2, section="pid"),
+    Knob("base_speed_mm_s", "SPD", 0.0, SPD_MAX, 5.0, 0, " mm/s", LINE_AND_TELEOP, section="speed"),
+    Knob("inner_pct", "INNER", 0.0, 100.0, 5.0, 0, " %", section="speed"),
+    Knob("search_deg_s", "SRCH", 10.0, TRN_MAX, 5.0, 0, DEG_S, section="speed"),
+    Knob("obstacle_threshold_mm", "THR", 20.0, 300.0, 5.0, 0, " mm", integer=True, section="route"),
+    Knob("finish_mm", "FIN", 0.0, 5000.0, 10.0, 0, " mm", section="route"),
+    Knob("route_lock_deg", "LOCK", 5.0, 60.0, 1.0, 0, " °", section="route"),
     Knob("teleop_turn_deg_s", "TURN", 10.0, TRN_MAX, 5.0, 0, DEG_S, frozenset({"teleop"}), False),
     Knob("drift_speed_mm_s", "DSPD", 10.0, SPD_MAX, 5.0, 0, " mm/s", frozenset({"drift"}), False),
     Knob("drift_turn_deg_s", "DTRN", 10.0, TRN_MAX, 5.0, 0, DEG_S, frozenset({"drift"}), False),
 )
 HUB_KEYS = tuple(k.key for k in KNOBS if k.hub)
+# line group sections, in order; the route editor closes the last one
+SECTIONS = {"pid": "PID", "speed": "Speed", "route": "Route"}
+FOLDED_AT_START = frozenset({"route"})
 GROUPS = {"line": "Line", "teleop": "Teleop", "drift": "Drift"}
 # program mode -> knob group; calibration drives nothing and keeps the current one
 MODE_GROUPS = {"line_follower": "line", "teleop": "teleop", "drift_test": "drift"}
@@ -87,6 +94,7 @@ MODE_HINTS = {
 
 class TuningRow:
     def __init__(self, knob: Knob, grid: QGridLayout, row: int, on_change) -> None:
+        """Takes grid rows `row` (controls) and `row + 1` (hub acknowledgement)."""
         self.knob = knob
         self._on_change = on_change
         self.slider = QSlider(Qt.Orientation.Horizontal)
@@ -104,10 +112,10 @@ class TuningRow:
 
         self.name = label(knob.key, tone="muted", mono=True)
         self.name.setFixedWidth(36)
-        grid.addWidget(self.name, 2 * row, 0)
-        grid.addWidget(self.slider, 2 * row, 1)
-        grid.addWidget(self.spin, 2 * row, 2)
-        grid.addWidget(self.ack, 2 * row + 1, 1, 1, 2)
+        grid.addWidget(self.name, row, 0)
+        grid.addWidget(self.slider, row, 1)
+        grid.addWidget(self.spin, row, 2)
+        grid.addWidget(self.ack, row + 1, 1, 1, 2)
 
         self.slider.valueChanged.connect(self._slider_moved)
         self.spin.valueChanged.connect(self._spin_changed)
@@ -145,8 +153,12 @@ class TuningRow:
         self._on_change(self.knob.key, value)
 
 
+STEP_NAMES = {"L": "left", "R": "right", "S": "straight across the crossing"}
+NEXT_STEP = {"L": "R", "R": "S", "S": "L"}  # a click on a step cycles it
+
+
 class RouteEditor(QWidget):
-    """Planned turns as L/R buttons: click one to flip it, + L / + R add, ⌫ removes.
+    """Planned steps as L/R/S buttons: click one to cycle it, +L / +R / +S add, ⌫ removes.
 
     While a run goes, taken turns are filled and the next one is outlined.
     """
@@ -159,9 +171,10 @@ class RouteEditor(QWidget):
         self._done: int | None = None
         self._editable = True
         self.setToolTip(
-            "Planned turns in order. Before each turn the robot follows the line edge on\n"
-            "that side, so it takes that branch at the next junction. Empty: plain line\n"
-            "following. Click a turn to flip it."
+            "Planned steps in order, corners included. L / R: before the turn the robot\n"
+            "follows the line edge on that side, so it takes that branch at the next\n"
+            "junction. S: straight across the next crossing, heading held within LOCK.\n"
+            "Empty: plain line following. Click a step to change it."
         )
         self.name = label("ROUTE", tone="muted", mono=True)
         self.name.setFixedWidth(36)
@@ -179,10 +192,12 @@ class RouteEditor(QWidget):
         row.addLayout(self._chip_row)
         row.addWidget(self.empty)
         row.addStretch()
-        for text, turn in (("+L", "L"), ("+R", "R"), ("⌫", "")):
+        for text, turn in (("+L", "L"), ("+R", "R"), ("+S", "S"), ("⌫", "")):
             button = QPushButton(text)
             button.setProperty("role", "chip")
-            button.setToolTip("Remove the last turn" if not turn else f"Add a {turn} turn")
+            button.setToolTip(
+                "Remove the last step" if not turn else f"Add a step: {STEP_NAMES[turn]}"
+            )
             button.clicked.connect(lambda _=False, t=turn: self._add(t))
             self.add_buttons[turn] = button
             row.addWidget(button)
@@ -217,7 +232,7 @@ class RouteEditor(QWidget):
         self.changed.emit(self._route)
 
     def _flip(self, i: int) -> None:
-        turn = "L" if self._route[i] == "R" else "R"
+        turn = NEXT_STEP[self._route[i]]
         self._route = self._route[:i] + turn + self._route[i + 1 :]
         self._rebuild()
         self.changed.emit(self._route)
@@ -229,7 +244,7 @@ class RouteEditor(QWidget):
         for i, turn in enumerate(self._route):
             chip = QPushButton(turn)
             chip.setProperty("role", "chip")
-            chip.setToolTip(f"Turn {i + 1}: {'left' if turn == 'L' else 'right'}. Click to flip.")
+            chip.setToolTip(f"Step {i + 1}: {STEP_NAMES[turn]}. Click to change.")
             chip.clicked.connect(lambda _=False, j=i: self._flip(j))
             self._chip_row.addWidget(chip)
             self.chips.append(chip)
@@ -238,8 +253,8 @@ class RouteEditor(QWidget):
 
     def _paint(self) -> None:
         full = len(self._route) >= MAX_ROUTE_STEPS
-        self.add_buttons["L"].setEnabled(self._editable and not full)
-        self.add_buttons["R"].setEnabled(self._editable and not full)
+        for turn in "LRS":
+            self.add_buttons[turn].setEnabled(self._editable and not full)
         self.add_buttons[""].setEnabled(self._editable and bool(self._route))
         for i, chip in enumerate(self.chips):
             chip.setEnabled(self._editable)
@@ -248,6 +263,26 @@ class RouteEditor(QWidget):
             else:
                 step = "done" if i < self._done else "next" if i == self._done else ""
             set_prop(chip, "step", step)
+
+
+class SectionHeader(QPushButton):
+    """A foldable section title in the line group, with a summary when folded."""
+
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        self.title = title
+        self.setProperty("role", "section")
+        self.setCheckable(True)  # checked = open
+        self.summary = ""
+
+    def show_state(self, summary: str) -> None:
+        self.summary = summary
+        arrow = "▾" if self.isChecked() else "▸"
+        text = f"{arrow} {self.title}"
+        if not self.isChecked() and summary:
+            text += f"   {summary}"
+        if self.text() != text:
+            self.setText(text)
 
 
 class TuningPanel(QFrame):
@@ -284,18 +319,38 @@ class TuningPanel(QFrame):
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(2)
         grid.setColumnStretch(1, 1)
-        self.rows = {
-            k.key: TuningRow(k, grid, i, lambda key, v: self.changed.emit(key, v))
-            for i, k in enumerate(KNOBS)
-        }
+        self.rows: dict[str, TuningRow] = {}
+        self.sections: dict[str, SectionHeader] = {}
         self.route = RouteEditor()
         self.route.changed.connect(self.route_changed)
+        self.route.changed.connect(lambda _route: self._refresh())
+
+        def add_row(knob: Knob, at: int) -> None:
+            self.rows[knob.key] = TuningRow(knob, grid, at, self._knob_changed)
+
+        at = 0
+        for key, title in SECTIONS.items():
+            header = SectionHeader(title)
+            header.setChecked(key not in FOLDED_AT_START)
+            header.toggled.connect(lambda _on: self._refresh())
+            self.sections[key] = header
+            grid.addWidget(header, at, 0, 1, 3)
+            at += 1
+            for knob in KNOBS:
+                if knob.section == key:
+                    add_row(knob, at)
+                    at += 2
+        grid.addWidget(self.route, at, 0, 1, 3)
+        at += 1
+        for knob in KNOBS:
+            if knob.section is None:
+                add_row(knob, at)
+                at += 2
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)
         layout.addLayout(head)
         layout.addLayout(grid)
-        layout.addWidget(self.route)
         self.set_group("line")
         self.set_mode("config")
 
@@ -314,6 +369,29 @@ class TuningPanel(QFrame):
             row.set_value(getattr(tuning, row.knob.field))
             row.slider.setValue(row._tick(row.value()))
             row.spin.blockSignals(False)
+        self._show_summaries()
+
+    def _knob_changed(self, key: str, value: float) -> None:
+        self.changed.emit(key, value)
+        self._show_summaries()
+
+    def summary(self, section: str) -> str:
+        """One line for a folded section, e.g. "KP -1.50 · KI 0.00 · KD -5.00"."""
+        parts = [
+            f"{row.knob.key} {row.value():.{row.knob.decimals}f}"
+            for row in self.rows.values()
+            if row.knob.section == section
+        ]
+        if section == "route":
+            parts.append(self.route.route() or "no route")
+        return " · ".join(parts)
+
+    def _show_summaries(self) -> None:
+        for key, header in self.sections.items():
+            header.show_state(self.summary(key))
+
+    def set_open(self, section: str, open_: bool) -> None:
+        self.sections[section].setChecked(open_)
 
     def knobs(self) -> dict[str, float]:
         """Protocol key -> value, e.g. {"SPD": 50.0, "INNER": 20.0}."""
@@ -338,14 +416,20 @@ class TuningPanel(QFrame):
         enabled = self.mode in ("config", "live", "speed")
         for button in self.group_buttons.values():
             button.setEnabled(self.mode == "config")  # a running program owns the group
+        line = self.group == "line"
+        for header in self.sections.values():
+            header.setVisible(line)
         for row in self.rows.values():
-            shown = self.group in row.knob.groups
+            section = row.knob.section
+            folded = line and section is not None and not self.sections[section].isChecked()
+            shown = self.group in row.knob.groups and not folded
             row.set_visible(shown, ack=self.mode == "live")
             row.set_enabled(enabled and shown)
             if self.mode != "live":
                 row.ack.setText("")
-        self.route.setVisible(self.group == "line")
+        self.route.setVisible(line and self.sections["route"].isChecked())
         self.route.set_editable(self.mode == "config")  # rendered at Run, fixed while it runs
+        self._show_summaries()
 
     def show_ack(self, key: str, acked: float | None, pending: bool, stale: bool) -> None:
         row = self.rows.get(key)

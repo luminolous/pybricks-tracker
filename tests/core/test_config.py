@@ -152,5 +152,6 @@ def test_route_error() -> None:
     from app.core.config import route_error
 
     assert route_error("") is None and route_error("RLLR") is None
-    assert "L or R" in route_error("RX")
+    assert route_error("LRS") is None
+    assert "L, R or S" in route_error("RX")
     assert "more than" in route_error("R" * 11)

@@ -80,6 +80,7 @@ def test_set_values_is_silent(qapp) -> None:
         "drift_turn_deg_s": 90,
         "obstacle_threshold_mm": 50,
         "finish_mm": 0,
+        "route_lock_deg": 20,
         "route": "",
     }
     assert panel.rows["SPD"].slider.value() == 24
@@ -92,8 +93,9 @@ def test_modes_enable_and_hint(qapp) -> None:
         assert panel.rows["KD"].slider.isEnabled() is enabled
 
     panel.set_mode("config")
+    panel.set_open("route", True)
     groups = {
-        "line": {"KP", "KI", "KD", "SPD", "INNER", "SRCH", "THR", "FIN"},
+        "line": {"KP", "KI", "KD", "SPD", "INNER", "SRCH", "THR", "FIN", "LOCK"},
         "teleop": {"SPD", "TURN"},
         "drift": {"DSPD", "DTRN"},
     }
@@ -102,6 +104,26 @@ def test_modes_enable_and_hint(qapp) -> None:
         assert panel.group == group
         shown = {k for k, row in panel.rows.items() if not row.slider.isHidden()}
         assert shown == keys
+
+
+def test_line_sections_fold_with_a_summary(qapp) -> None:
+    panel = TuningPanel()
+    panel.set_values(TuningParams())  # the window always fills it from the config
+    route = panel.sections["route"]
+    assert not route.isChecked()  # folded at start: the event list keeps its room
+    assert panel.rows["THR"].slider.isHidden() and panel.route.isHidden()
+    assert route.text() == "▸ Route   THR 50 · FIN 0 · LOCK 20 · no route"
+    pid = panel.sections["pid"]
+    assert pid.text() == "▾ PID"  # open: no summary
+    pid.click()
+    assert panel.rows["KP"].slider.isHidden()
+    panel.rows["KP"].set_value(-2.0)
+    assert pid.text() == "▸ PID   KP -2.00 · KI 0.00 · KD -5.00"
+    route.click()
+    assert not panel.rows["LOCK"].slider.isHidden() and not panel.route.isHidden()
+    panel.set_group("teleop")  # sections belong to the line group only
+    assert pid.isHidden()
+    assert not panel.rows["SPD"].slider.isHidden()
 
 
 def test_route_editor(qapp) -> None:
@@ -113,10 +135,17 @@ def test_route_editor(qapp) -> None:
         editor.add_buttons[turn].click()
     editor.add_buttons["R"].click()
     assert editor.route() == "RLLR" and seen[-1] == "RLLR"
-    editor.chips[1].click()  # flip
+    editor.chips[1].click()  # cycles L -> R -> S -> L
     assert editor.route() == "RRLR"
+    editor.chips[1].click()
+    assert editor.route() == "RSLR"
+    editor.chips[1].click()
+    assert editor.route() == "RLLR"
+    editor.chips[1].click()
     editor.add_buttons[""].click()  # remove last
     assert panel.values()["route"] == "RRL"
+    editor.add_buttons["S"].click()
+    assert panel.values()["route"] == "RRLS"
     for _ in range(20):
         editor.add_buttons["L"].click()
     assert len(editor.route()) == 10  # MAX_ROUTE_STEPS

@@ -20,11 +20,13 @@
 # black at SPD 250), so the robot came back from white slower than it left
 # black, and most LOST events in the recordings started right there.
 #
-# Route (protocol.md): planned turns in order, e.g. "RLLR". Before each turn
-# the robot tracks the line edge on that side, so it takes that branch at the
-# next junction; the gyro counts a turn as taken. If a wall shows up while a
-# turn is pending, the robot turns the planned way on the spot. After the last
-# turn, a line end at least FINISH_MM later is the finish.
+# Route (protocol.md): planned steps in order, e.g. "RLLR" or "LRS". Before
+# each turn the robot tracks the line edge on that side, so it takes that
+# branch at the next junction; the gyro counts a turn as taken. S goes straight
+# across a crossing: the gyro locks the heading within LOCK_DEG, so the edge
+# cannot pull the robot into a branch. If a wall shows up while a turn is
+# pending, the robot turns the planned way on the spot. After the last step, a
+# line end at least FINISH_MM later is the finish.
 
 from pybricks.parameters import Color
 
@@ -45,10 +47,11 @@ LOST_MS = 150
 LOST_MM = 30
 SEARCH_DEG = 120  # first sweep; the return sweep covers twice this
 
-ROUTE = "{{ tuning.route }}"  # planned turns in order, L or R; empty: plain following
+ROUTE = "{{ tuning.route }}"  # planned steps: L, R, S (straight); empty: plain following
 TURN_DONE_DEG = 60  # heading change that counts as a planned turn taken
 SETTLE_DEG = 20  # switch to the next turn's edge once this close to the new heading
 WALL_TURN_DEG = 90  # fallback turn on the spot when a wall blocks a pending turn
+CROSS_MM = 30  # S: full black this far forward, heading locked, is the crossing
 
 _last_error = 0
 # KI term: error-seconds summed only in the grey edge band. It restarts on every
@@ -69,6 +72,8 @@ _step = 0  # planned turns taken
 _side_step = 0  # the step whose turn side sets the tracked edge
 _step_heading = 0.0  # ideal heading while the current step is pending
 _finish_from = None  # robot.distance() when the last planned turn was taken
+_black_from = None  # S: robot.distance() where the current full-black stretch began
+_crossing = False  # S: on the crossing now; the step completes when it leaves it
 
 
 def light(color):
@@ -86,10 +91,54 @@ def turn_sign(c):
 def edge_flip():
     # 1 keeps the edge the KP sign tracks, -1 tracks the other one. Negative
     # KP tracks the right edge, and an edge follower takes that side's branch.
+    # S keeps the KP edge: the heading lock, not the edge, carries it across.
     if not ROUTE:
         return 1
+    step = ROUTE[min(_side_step, len(ROUTE) - 1)]
+    if step == "S":
+        return 1
     tuned = 1 if KP < 0 else -1
-    return tuned * turn_sign(ROUTE[min(_side_step, len(ROUTE) - 1)])
+    return tuned * turn_sign(step)
+
+
+def straight_pending():
+    return _step < len(ROUTE) and ROUTE[_step] == "S"
+
+
+def lock_heading(steer):
+    # S pending: cut any steering that would turn further from the segment
+    # heading than LOCK_DEG. The app frame is CCW-positive and a positive steer
+    # turns right, which lowers the heading.
+    off = _heading_deg - _step_heading
+    if off >= LOCK_DEG and steer < 0:
+        return 0
+    if off <= -LOCK_DEG and steer > 0:
+        return 0
+    return steer
+
+
+def step_taken():
+    global _step, _finish_from
+    _step += 1
+    emit_e("TURN", "{}/{} {}".format(_step, len(ROUTE), ROUTE[_step - 1]))
+    if _step == len(ROUTE):
+        _finish_from = robot.distance()
+
+
+def track_straight(refl):
+    # S: a crossing is full black for CROSS_MM of forward travel while locked;
+    # the step is taken once the sensor leaves it, and the lock goes with it.
+    global _black_from, _crossing
+    if refl < BLACK_BELOW:
+        if _black_from is None:
+            _black_from = robot.distance()
+        elif robot.distance() - _black_from >= CROSS_MM:
+            _crossing = True
+        return
+    _black_from = None
+    if _crossing:
+        _crossing = False
+        step_taken()
 
 
 def arc_turn(inner):
@@ -133,20 +182,20 @@ def setup():
     _step_heading = _heading_deg
 
 
-def track_route():
-    global _step, _side_step, _step_heading, _finish_from
+def track_route(refl):
+    global _side_step, _step_heading
     if _side_step < _step and abs(_heading_deg - _step_heading) < SETTLE_DEG:
         _side_step = _step  # settled on the new line: track the next turn's edge
     if _step >= len(ROUTE):
         return
+    if ROUTE[_step] == "S":
+        track_straight(refl)  # straight on: the ideal heading stays
+        return
     sign = turn_sign(ROUTE[_step])
     # the app frame is CCW-positive: a right turn lowers the heading
     if (_step_heading - _heading_deg) * sign >= TURN_DONE_DEG:
-        _step += 1
         _step_heading -= sign * 90
-        emit_e("TURN", "{}/{} {}".format(_step, len(ROUTE), ROUTE[_step - 1]))
-        if _step == len(ROUTE):
-            _finish_from = robot.distance()
+        step_taken()
 
 
 def finish():
@@ -209,7 +258,7 @@ def control_step(n, refl):
         on_line()
         STATE = "FOLLOW"
     if not _search:
-        track_route()
+        track_route(refl)
 {% if distance %}
     if _distance_mm >= OBSTACLE_MM:
         _wall_armed = True
@@ -222,7 +271,7 @@ def control_step(n, refl):
             beep(1000, 100)
         robot.stop()
         STEER = 0
-        if _step < len(ROUTE):
+        if _step < len(ROUTE) and not straight_pending():
             # the branch was missed: turn the planned way on the spot
             _search = 0
             _wall_turn = True
@@ -264,6 +313,8 @@ def control_step(n, refl):
         STEER = max(-limit, min(limit, STEER))
         STATE = "FOLLOW"
         light(Color.YELLOW)
+    if straight_pending():
+        STEER = lock_heading(STEER)
     robot.drive(arc_speed(STEER), STEER)  # outer wheel at SPD, inner slower, both forward
     _last_error = error
 {% endblock %}

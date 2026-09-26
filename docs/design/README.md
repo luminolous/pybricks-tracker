@@ -20,6 +20,9 @@ Known deviations in the Qt build:
   Drift` buttons (small role, checked = accent) next to the caption. The line
   group ends with a route row of small mono chips (`chip` role): taken = accent
   fill, next = accent outline.
+- The line group's knobs sit in foldable sections (PID, Speed, Route): a
+  mono `section`-role header with ▾ / ▸, and a dim one-line summary of the
+  values while folded. Route starts folded so the event list keeps its room.
 - Map ruler (not in the mockup): a small `role="small"` icon button pinned
   top-left of the plot, checked = accent. Measurement: dashed accent line,
   hollow end points, mono label on a surface-coloured box beside the midpoint.

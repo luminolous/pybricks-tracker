@@ -122,14 +122,14 @@ class RobotGeometry:
     sensor_offset_mm: float = 40.0  # colour sensor ahead of the wheel axis
 
 
-ROUTE_TURNS = frozenset("LR")
+ROUTE_TURNS = frozenset("LRS")  # left, right, straight across a crossing
 MAX_ROUTE_STEPS = 10
 
 
 def route_error(route: str) -> str | None:
     """Why a route string is invalid, or None."""
     if set(route) - ROUTE_TURNS:
-        return "Route turns must be L or R."
+        return "Route steps must be L, R or S."
     if len(route) > MAX_ROUTE_STEPS:
         return f"Route has more than {MAX_ROUTE_STEPS} turns."
     return None
@@ -199,6 +199,8 @@ class TuningParams:
     # line end at least this far on is the finish.
     route: str = ""
     finish_mm: float = 0.0
+    # Route step S: heading lock while crossing, degrees from the segment heading.
+    route_lock_deg: float = 20.0
 
 
 @dataclass(frozen=True)
