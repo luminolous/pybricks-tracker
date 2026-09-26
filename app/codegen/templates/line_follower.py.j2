@@ -83,7 +83,14 @@ STEADY_MS = 500  # ... and steady: net heading change over this window ...
 STEADY_DEG = 5  # ... below this
 ANCHOR_RATE = 0.01  # per loop: ~1 s to learn the real line heading
 ANCHOR_MAX_DEG = 15  # learnt heading within this of the step's first guess
-ARM_MM = 100  # S arms after following the new line this far: the heading is learnt
+# Edge switch, active: once settled on the new line, the old edge's control
+# aims darker (SWITCH_TARGET) so the sensor walks into the tape; on full black
+# the new edge's control takes over and carries it across. Waiting for black
+# by chance failed whenever the robot tracked the edge smoothly: on the short
+# segment before the green wall it never switched and ran past the right
+# branch (2026-09-26, 2 or 3 full-black samples in the failed runs, 39-60 in
+# the good ones).
+SWITCH_TARGET = BLACK_BELOW - 2
 # Wall fallback: turn on the spot to the planned heading, measured by the gyro,
 # not by robot.turn(): with a wrong axle track, turn(90) did 64 degrees and left
 # the sensor on white beside the branch (2026-09-26). If the sensor is then off
@@ -130,7 +137,8 @@ _finish_from = None  # robot.distance() when the last planned turn was taken
 _black_from = None  # S: robot.distance() where the current full-black stretch began
 _crossing = False  # S: on the crossing now; the step completes when it leaves it
 _s_clear = True  # S: the sensor has left black since the edge switch; only then look for a crossing
-_arm_from = 0  # S: robot.distance() at the last edge switch
+_switch_ready = False  # settled, walking into the tape to switch edge
+_s_settled = False  # S: settled on the segment after the previous step; the lock may act
 _guess_heading = 0.0  # the step's first guess at its segment heading
 _h_ref = 0.0  # heading STEADY_MS ago, for the steady test
 _steady = False
@@ -149,17 +157,26 @@ def turn_sign(c):
     return 1 if c == "R" else -1
 
 
+def side_of(i):
+    # The edge side ("L" or "R") step i follows, or None for KP's own edge.
+    # S keeps the edge of the turn before it: no switch just before a crossing,
+    # the heading lock carries it across.
+    i = min(i, len(ROUTE) - 1)
+    while i >= 0 and ROUTE[i] == "S":
+        i -= 1
+    return ROUTE[i] if i >= 0 else None
+
+
 def edge_flip():
     # 1 keeps the edge the KP sign tracks, -1 tracks the other one. Negative
     # KP tracks the right edge, and an edge follower takes that side's branch.
-    # S keeps the KP edge: the heading lock, not the edge, carries it across.
     if not ROUTE:
         return 1
-    step = ROUTE[min(_side_step, len(ROUTE) - 1)]
-    if step == "S":
+    side = side_of(_side_step)
+    if side is None:
         return 1
     tuned = 1 if KP < 0 else -1
-    return tuned * turn_sign(step)
+    return tuned * turn_sign(side)
 
 
 def straight_pending():
@@ -170,8 +187,9 @@ def straight_armed():
     # The S lock and crossing detection start only once the robot has settled on
     # the new line and switched edge (2026-09-26: armed right after the R
     # corner at 30 degrees off, the lock blocked the way back to the line).
-    ready = _side_step == _step and _s_clear and robot.distance() - _arm_from >= ARM_MM
-    return straight_pending() and ready
+    # On a short segment before the crossing the old 100 mm arming came too late
+    # and the edge pulled the robot into a branch first (2026-09-26).
+    return straight_pending() and _side_step == _step and _s_clear and _s_settled
 
 
 def lock_heading(steer):
@@ -187,8 +205,10 @@ def lock_heading(steer):
 
 
 def step_taken():
-    global _step, _finish_from
+    global _step, _finish_from, _switch_ready, _s_settled
     _step += 1
+    _switch_ready = False
+    _s_settled = False
     emit_e("TURN", "{}/{} {}".format(_step, len(ROUTE), ROUTE[_step - 1]))
     if _step == len(ROUTE):
         _finish_from = robot.distance()
@@ -258,10 +278,12 @@ def reset_steady():
     # edge switch fires while the robot still rotates (2026-09-26: switched at
     # the end of the green-wall turn, the sensor slid off the right side and
     # the new edge's control turned the robot round).
-    global _steady, _h_ref
+    global _steady, _h_ref, _switch_ready, _s_settled
     _steady = False
     _h_ref = _heading_deg
     _steady_timer.reset()
+    _switch_ready = False
+    _s_settled = False
 
 
 def on_line():
@@ -272,20 +294,20 @@ def on_line():
 
 
 def setup():
-    global STATE, _step_heading, _arm_from, _guess_heading
+    global STATE, _step_heading, _guess_heading
     STATE = "FOLLOW"
     on_line()
     _step_heading = _heading_deg
     _guess_heading = _heading_deg
-    _arm_from = robot.distance()
 
 
 def track_route(refl):
-    # Edge switch: only once settled on the new line AND with the sensor on full
-    # black. From black, the new edge's control carries the sensor across the
-    # tape to the new side. Switching on white put the sensor on the wrong side:
+    # Edge switch: once settled on the new line, walk into the tape (see
+    # SWITCH_TARGET) and switch on full black, so the new edge's control carries
+    # the sensor across. Switching on white put the sensor on the wrong side:
     # the new edge's control then turned away from the line (2026-09-26).
-    global _side_step, _step_heading, _s_clear, _arm_from, _h_ref, _steady, _guess_heading
+    global _side_step, _step_heading, _s_clear, _h_ref, _steady, _guess_heading
+    global _switch_ready, _s_settled
     if _steady_timer.time() >= STEADY_MS:
         _steady = abs(_heading_deg - _h_ref) < STEADY_DEG
         _h_ref = _heading_deg
@@ -296,15 +318,22 @@ def track_route(refl):
         learnt = _step_heading + ANCHOR_RATE * (_heading_deg - _step_heading)
         low = _guess_heading - ANCHOR_MAX_DEG
         _step_heading = max(low, min(_guess_heading + ANCHOR_MAX_DEG, learnt))
-    if _side_step < _step and near and _steady and refl < BLACK_BELOW:
-        _side_step = _step
-        _s_clear = False  # crossing the tape now is the switch, not a crossing
-        _arm_from = robot.distance()
+    if _side_step < _step:
+        if side_of(_step) == side_of(_side_step):
+            _side_step = _step  # same edge: nothing to cross
+        elif near and _steady:
+            _switch_ready = True
+        if _switch_ready and refl < BLACK_BELOW:
+            _side_step = _step
+            _switch_ready = False
+            _s_clear = False  # crossing the tape now is the switch, not a crossing
     if _step >= len(ROUTE):
         return
     if ROUTE[_step] == "S":
         if _side_step == _step and not _s_clear and refl >= BLACK_BELOW:
             _s_clear = True
+        if near and _steady:
+            _s_settled = True
         if straight_armed():
             track_straight(refl)  # straight on: the ideal heading stays
         return
@@ -404,12 +433,17 @@ def wall_turn_step():
 
 def control_step(n, refl):
     global STATE, STEER, _last_error, _obstacle, _search, _wall_turn, _wall_armed, _integral
+    global _side_step
     if _wall_turn:
         if not wall_turn_step():
             return
         _wall_turn = False  # facing the planned branch; follow or search from here
         reset_steady()
         track_route(refl)  # the planned step is taken
+        # Follow the edge of the turn just made: stopped short of the corner,
+        # the new line lies on that side of the sensor. An older edge (never
+        # switched) turned the robot away from it (2026-09-26).
+        _side_step = max(_side_step, _step - 1)
         on_line()
         STATE = "FOLLOW"
         if refl > WHITE_ABOVE:
@@ -465,6 +499,8 @@ def control_step(n, refl):
         light(Color.RED if refl < BLACK_BELOW else Color.GREEN)
         reset_integral()
     else:
+        if _switch_ready:
+            error = refl - SWITCH_TARGET  # walk into the tape to switch edge
         _integral = max(-INTEGRAL_MAX, min(INTEGRAL_MAX, _integral + error * LOOP_MS / 1000))
         STEER = edge_flip() * (KP * error + KI * _integral + KD * (error - _last_error))
         # never sharper than the full turn, and never with a wheel backwards

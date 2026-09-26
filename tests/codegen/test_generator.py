@@ -450,8 +450,8 @@ def test_edge_follows_the_next_turn(source: str) -> None:
     flip = function(source, "edge_flip")
     assert "if not ROUTE:\n        return 1" in flip  # no route: the original behaviour
     assert "tuned = 1 if KP < 0 else -1" in flip  # negative KP tracks the right edge
-    assert "step = ROUTE[min(_side_step, len(ROUTE) - 1)]" in flip
-    assert "return tuned * turn_sign(step)" in flip
+    assert "side = side_of(_side_step)" in flip
+    assert "return tuned * turn_sign(side)" in flip
     control = function(source, "control_step")
     assert (
         "STEER = edge_flip() * (KP * error + KI * _integral + KD * (error - _last_error))"
@@ -468,7 +468,7 @@ def test_turns_are_counted_by_gyro_heading(source: str) -> None:
     assert 'emit_e("TURN", "{}/{} {}".format(_step, len(ROUTE), ROUTE[_step - 1]))' in taken
     assert "_finish_from = robot.distance()" in taken
     # the edge switches only once the heading settled on the new line
-    assert "if _side_step < _step and near and _steady and refl < BLACK_BELOW:" in track
+    assert "if _switch_ready and refl < BLACK_BELOW:" in track
     # search sweeps must not count as turns
     assert "if not _search:\n        track_route(refl)" in function(source, "control_step")
 
@@ -544,7 +544,8 @@ def test_straight_step_locks_heading_across_a_crossing() -> None:
     assert re.search(r"^LOCK_DEG = 25.0", source, re.MULTILINE)
     assert "CROSS_MM = 30" in source
     # S keeps the KP edge and the ideal heading; the lock cuts steering past it
-    assert 'if step == "S":\n        return 1' in function(source, "edge_flip")
+    # S keeps the edge of the turn before it
+    assert 'while i >= 0 and ROUTE[i] == "S":' in function(source, "side_of")
     lock = function(source, "lock_heading")
     assert "off = _heading_deg - _step_heading" in lock
     assert "if off >= LOCK_DEG and steer < 0:" in lock
@@ -578,19 +579,28 @@ def test_negative_inner_allows_sharper_turns_on_black_or_white_only() -> None:
     assert re.search(r"^INNER_PCT = -30.0", source, re.MULTILINE)
 
 
-def test_edge_switch_waits_for_black_and_arms_s_after(source: str) -> None:
+def test_edge_switch_walks_into_the_tape_and_arms_s_when_settled(source: str) -> None:
     track = function(source, "track_route")
-    # switch only settled and on full black: the new edge's control crosses the tape
     assert "near = abs(_heading_deg - _step_heading) < SETTLE_DEG" in track
-    assert "if _side_step < _step and near and _steady and refl < BLACK_BELOW:" in track
-    assert "_s_clear = False" in track
-    # S arms once switched and off black again, so the switch is not a crossing
-    assert "if _side_step == _step and not _s_clear and refl >= BLACK_BELOW:" in track
-    armed = function(source, "straight_armed")
-    assert "return straight_pending() and ready" in armed
-    # the wall rule still treats a pending S as "do not turn"
+    # same edge: nothing to cross; otherwise settle, walk into the tape, switch on black
+    assert "if side_of(_step) == side_of(_side_step):" in track
+    assert "elif near and _steady:\n            _switch_ready = True" in track
+    assert "if _switch_ready and refl < BLACK_BELOW:" in track
     control = function(source, "control_step")
+    assert "if _switch_ready:\n            error = refl - SWITCH_TARGET" in control
+    assert "SWITCH_TARGET = BLACK_BELOW - 2" in source
+    # S arms when settled after the previous step, no distance wait
+    assert "if near and _steady:\n            _s_settled = True" in track
+    armed = function(source, "straight_armed")
+    assert "_side_step == _step and _s_clear and _s_settled" in armed
+    # after a wall turn: the edge of the turn just made
+    assert "_side_step = max(_side_step, _step - 1)" in control
+    # the wall rule still treats a pending S as "do not turn"
     assert "if _step < len(ROUTE) and not straight_pending():" in control
+    # step taken and steady reset drop the per-step readiness
+    for name in ("step_taken", "reset_steady"):
+        body = function(source, name)
+        assert "_switch_ready = False" in body and "_s_settled = False" in body
 
 
 def test_full_turn_sharpens_while_the_sensor_stays_off_the_edge(source: str) -> None:
@@ -618,9 +628,7 @@ def test_segment_heading_is_learnt_from_the_gyro(source: str) -> None:
     assert "learnt = _step_heading + ANCHOR_RATE * (_heading_deg - _step_heading)" in track
     assert "_step_heading = max(low, min(_guess_heading + ANCHOR_MAX_DEG, learnt))" in track
     assert "_guess_heading = _step_heading" in track
-    assert "SETTLE_DEG = 30" in source and "ARM_MM = 100" in source
-    armed = function(source, "straight_armed")
-    assert "robot.distance() - _arm_from >= ARM_MM" in armed
+    assert "SETTLE_DEG = 30" in source and "ARM_MM" not in source
 
 
 def test_steady_is_earned_again_after_a_wall_turn_or_search(source: str) -> None:

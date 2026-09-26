@@ -372,3 +372,25 @@ slid off the right side of the top line and the left-edge control turned right
 to -49 degrees. Fix: steady is reset at the end of every wall turn and when a
 search starts or finds the line, so it has to be earned over 500 ms again.
 Note: INNER was -40 (= IMIN) in this run, which makes every full turn sharp.
+
+## 2026-09-26 — review against the version that kept working
+
+The runs that "kept working" (13:10 and 13:22-13:31 UTC) were on commit
+3731e0a, before heading learning. Even there 3 of 6 runs failed at the green
+wall. Comparing the vertical segment (yellow junction to green wall) in all
+runs: the good runs had switched to the right edge (39-60 full-black
+samples), the failed ones were still on the left edge (2-3 full-black
+samples) and ran past the right branch into the wall. The edge switch waited
+for the sensor to reach full black by chance, which never happens when the
+edge is tracked smoothly (bug since 50c2d0a). That also explains the robot
+getting very close to the wall in failed runs: it had already passed the
+branch; THR worked (OBS at 77 mm with THR 80).
+
+Run 13:54 reached the crossing but turned into its left branch: the S lock
+waited for the edge switch plus 100 mm, too late on the short top segment.
+
+Fixes: the edge switch is active (once settled, the old edge aims darker so
+the sensor walks into the tape, switching on black; the replay of three
+failed runs gives ~2 s of margin before the green wall); S keeps the edge of
+the turn before it and arms as soon as the robot is settled (no 100 mm); after
+a wall turn the robot follows the edge of the turn it just made.
