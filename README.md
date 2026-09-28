@@ -16,9 +16,9 @@
 
 <br/>
 
-<!-- Screenshot: save it as docs/images/app.png, then remove this comment's markers.
-<p align="center"><img src="docs/images/app.png" alt="Pybricks Tracker main window" /></p>
--->
+<p align="center">
+  <img src="docs/gif-demo.gif" alt="Pybricks Tracker during a line follower run: the map draws the trail, the reflection plot scrolls, and the readout strip shows position, heading, steering and state" width="800" />
+</p>
 
 ```powershell
 git clone https://github.com/luminolous/pybricks-tracker && cd pybricks-tracker
