@@ -3,7 +3,16 @@
 # Check a build with:  dist\PybricksTracker.exe --selftest
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
+
+sys.path.insert(0, SPECPATH)
+from app.ui.app_icon import write_ico  # noqa: E402
+
+# The exe icon, rendered from app/ui/icons/app.svg on every build.
+exe_icon = write_ico(Path(SPECPATH) / "build" / "app.ico")
 
 datas = [
     # Loaded by path at runtime (Path(__file__).parent / ...), so they keep
@@ -43,6 +52,7 @@ exe = EXE(
     a.datas,
     [],
     name="PybricksTracker",
+    icon=str(exe_icon),
     debug=False,
     strip=False,
     upx=False,

@@ -18,6 +18,7 @@ from pathlib import Path
 import qasync
 from PySide6.QtWidgets import QApplication
 
+from app.ui.app_icon import app_icon, set_windows_app_id
 from app.ui.main_window import MainWindow
 from app.ui.theme import apply_theme
 
@@ -97,7 +98,9 @@ def main() -> int:
     if args.selftest:
         return asyncio.run(selftest())
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    set_windows_app_id()  # before any window, or the taskbar shows Python's icon
     app = QApplication.instance() or QApplication(sys.argv)
+    app.setWindowIcon(app_icon())
     apply_theme(app)
     loop = qasync.QEventLoop(app)
     asyncio.set_event_loop(loop)
